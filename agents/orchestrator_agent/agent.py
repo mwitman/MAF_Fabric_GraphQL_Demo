@@ -20,7 +20,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 # ---------------------------------------------------------------------------
 # Load system prompt from markdown
 # ---------------------------------------------------------------------------
-_prompt_path = Path(__file__).resolve().parent / "prompts" / "data_agent.md"
+_prompt_path = Path(__file__).resolve().parent / "prompts" / "orchestrator_agent.md"
 _instructions = _prompt_path.read_text(encoding="utf-8")
 
 # ---------------------------------------------------------------------------

@@ -87,11 +87,11 @@ Open [http://127.0.0.1:8080](http://127.0.0.1:8080) in your browser.
 agents/
 ├── .env                          # Environment variables (not committed)
 ├── requirements.txt              # Python dependencies
-└── data_agent/
+└── orchestrator_agent/
     ├── __init__.py               # DevUI auto-discovery export
     ├── agent.py                  # Agent definition + MCP tool wiring
     └── prompts/
-        └── data_agent.md         # System prompt (tool routing, output formatting)
+        └── orchestrator_agent.md # System prompt (tool routing, output formatting)
 run.py                            # DevUI launcher
 start.ps1                         # PowerShell launcher (kills stale port, starts DevUI)
 ```
@@ -159,7 +159,7 @@ FABRIC_PRODUCT_AGENT_MCP_URL=https://api.fabric.microsoft.com/v1/mcp/workspaces/
 
 ### Step 4: Add, Remove, or Rename Tools
 
-In `agents/data_agent/agent.py`, each tool is registered with `client.get_mcp_tool()`. To adapt:
+In `agents/orchestrator_agent/agent.py`, each tool is registered with `client.get_mcp_tool()`. To adapt:
 
 **Add a new tool:**
 ```python
@@ -186,7 +186,7 @@ agent = client.as_agent(
 
 ### Step 5: Update the System Prompt
 
-Edit `agents/data_agent/prompts/data_agent.md` to reflect your tools and data:
+Edit `agents/orchestrator_agent/prompts/orchestrator_agent.md` to reflect your tools and data:
 
 - Update the **capabilities table** with your tool names and what they query
 - Adjust the **output guidelines** for your data (e.g., column names, relationships, expected formats)
