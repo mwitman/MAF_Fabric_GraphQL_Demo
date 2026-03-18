@@ -1,3 +1,10 @@
+# Reference folders
+_maf_ref/
+_mcp_ref/
+
+# Docs (internal notes)
+docs/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
