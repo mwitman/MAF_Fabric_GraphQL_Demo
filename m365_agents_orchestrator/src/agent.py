@@ -11,6 +11,7 @@ endpoints server-side and returns a combined response.
 
 import logging
 import sys
+import time
 import traceback
 from os import environ
 from pathlib import Path
@@ -65,12 +66,28 @@ AGENT_APP = AgentApplication[TurnState](
 FABRIC_DATA_AGENT_SCOPE = "https://api.fabric.microsoft.com/.default"
 
 _credential = DefaultAzureCredential()
-_fabric_access_token = _credential.get_token(FABRIC_DATA_AGENT_SCOPE).token
+_cached_token = _credential.get_token(FABRIC_DATA_AGENT_SCOPE)
 
-_fabric_headers = {
-    "Authorization": f"Bearer {_fabric_access_token}",
-    "Content-Type": "application/json",
-}
+# Refresh the token if it expires within this many seconds
+_TOKEN_REFRESH_BUFFER_SECS = 300  # 5 minutes
+
+
+def _get_fabric_headers() -> dict[str, str]:
+    """Return Fabric MCP headers with a valid bearer token.
+
+    Refreshes the token automatically when it is expired or about to expire
+    (within ``_TOKEN_REFRESH_BUFFER_SECS`` seconds of expiry).
+    """
+    global _cached_token
+
+    if time.time() >= _cached_token.expires_on - _TOKEN_REFRESH_BUFFER_SECS:
+        logger.info("Fabric access token expired or near expiry — refreshing")
+        _cached_token = _credential.get_token(FABRIC_DATA_AGENT_SCOPE)
+
+    return {
+        "Authorization": f"Bearer {_cached_token.token}",
+        "Content-Type": "application/json",
+    }
 
 # ---------------------------------------------------------------------------
 # Azure OpenAI client (Responses API)
@@ -86,29 +103,41 @@ _DEPLOYMENT = environ["AZURE_OPENAI_DEPLOYMENT_NAME"]
 # ---------------------------------------------------------------------------
 # MCP tool definitions for the Responses API
 # ---------------------------------------------------------------------------
-_MCP_TOOLS = [
-    {
-        "type": "mcp",
-        "server_label": "Sales Agent",
-        "server_url": environ["FABRIC_SALES_AGENT_MCP_URL"],
-        "headers": _fabric_headers,
-        "require_approval": "never",
-    },
-    {
-        "type": "mcp",
-        "server_label": "Customer Agent",
-        "server_url": environ["FABRIC_CUSTOMER_AGENT_MCP_URL"],
-        "headers": _fabric_headers,
-        "require_approval": "never",
-    },
-    {
-        "type": "mcp",
-        "server_label": "Product Agent",
-        "server_url": environ["FABRIC_PRODUCT_AGENT_MCP_URL"],
-        "headers": _fabric_headers,
-        "require_approval": "never",
-    },
-]
+_FABRIC_SALES_URL = environ["FABRIC_SALES_AGENT_MCP_URL"]
+_FABRIC_CUSTOMER_URL = environ["FABRIC_CUSTOMER_AGENT_MCP_URL"]
+_FABRIC_PRODUCT_URL = environ["FABRIC_PRODUCT_AGENT_MCP_URL"]
+
+
+def _build_mcp_tools() -> list[dict]:
+    """Build the MCP tools list with fresh Fabric auth headers.
+
+    Called on each request so that expired tokens are never sent to
+    Azure OpenAI as part of the hosted MCP tool definitions.
+    """
+    headers = _get_fabric_headers()
+    return [
+        {
+            "type": "mcp",
+            "server_label": "Sales Agent",
+            "server_url": _FABRIC_SALES_URL,
+            "headers": headers,
+            "require_approval": "never",
+        },
+        {
+            "type": "mcp",
+            "server_label": "Customer Agent",
+            "server_url": _FABRIC_CUSTOMER_URL,
+            "headers": headers,
+            "require_approval": "never",
+        },
+        {
+            "type": "mcp",
+            "server_label": "Product Agent",
+            "server_url": _FABRIC_PRODUCT_URL,
+            "headers": headers,
+            "require_approval": "never",
+        },
+    ]
 
 # ---------------------------------------------------------------------------
 # Conversation history (in-memory, keyed by conversation ID)
@@ -163,7 +192,7 @@ async def on_message(context: TurnContext, _state: TurnState):
         response = await CLIENT.responses.create(
             model=_DEPLOYMENT,
             input=messages,
-            tools=_MCP_TOOLS,
+            tools=_build_mcp_tools(),
         )
 
         # Extract the assistant's text output

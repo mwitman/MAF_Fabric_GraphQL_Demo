@@ -7,6 +7,7 @@ DevUI discovers this agent via the __init__.py that exports `agent`.
 """
 
 import os
+import time
 from pathlib import Path
 
 from azure.identity import DefaultAzureCredential
@@ -31,12 +32,30 @@ _instructions = _prompt_path.read_text(encoding="utf-8")
 FABRIC_DATA_AGENT_SCOPE = "https://api.fabric.microsoft.com/.default"
 
 credential = DefaultAzureCredential()
-fabric_access_token = credential.get_token(FABRIC_DATA_AGENT_SCOPE).token
+_cached_token = credential.get_token(FABRIC_DATA_AGENT_SCOPE)
+
+# Refresh the token if it expires within this many seconds
+_TOKEN_REFRESH_BUFFER_SECS = 300  # 5 minutes
 
 fabric_headers = {
-    "Authorization": f"Bearer {fabric_access_token}",
+    "Authorization": f"Bearer {_cached_token.token}",
     "Content-Type": "application/json",
 }
+
+
+def refresh_fabric_headers() -> None:
+    """Refresh the Fabric bearer token in-place when it is expired or near expiry.
+
+    The ``fabric_headers`` dict is shared by reference with all MCP tool
+    definitions.  Mutating it in-place ensures that subsequent Azure OpenAI
+    Responses API calls include a valid token without recreating tools or the
+    agent.
+    """
+    global _cached_token
+
+    if time.time() >= _cached_token.expires_on - _TOKEN_REFRESH_BUFFER_SECS:
+        _cached_token = credential.get_token(FABRIC_DATA_AGENT_SCOPE)
+        fabric_headers["Authorization"] = f"Bearer {_cached_token.token}"
 
 # ---------------------------------------------------------------------------
 # Azure OpenAI client (API key auth)
