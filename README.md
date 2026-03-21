@@ -84,17 +84,33 @@ Open [http://127.0.0.1:8080](http://127.0.0.1:8080) in your browser.
 ## Project Structure
 
 ```
-agents/
-├── .env                          # Environment variables (not committed)
-├── requirements.txt              # Python dependencies
+agents/                              # DevUI version (local development)
+├── .env                             # Environment variables (not committed)
+├── requirements.txt                 # Python dependencies
 └── orchestrator_agent/
-    ├── __init__.py               # DevUI auto-discovery export
-    ├── agent.py                  # Agent definition + MCP tool wiring
+    ├── __init__.py                  # DevUI auto-discovery export
+    ├── agent.py                     # Agent definition + MCP tool wiring
     └── prompts/
-        └── orchestrator_agent.md # System prompt (tool routing, output formatting)
-run.py                            # DevUI launcher
-start.ps1                         # PowerShell launcher (kills stale port, starts DevUI)
+        └── orchestrator_agent.md    # System prompt (tool routing, output formatting)
+run.py                               # DevUI launcher
+start.ps1                            # PowerShell launcher (kills stale port, starts DevUI)
+
+m365_agents_orchestrator/            # M365 Channels version (Teams, Outlook, Copilot, etc.)
+├── env.TEMPLATE                     # Environment variable template
+├── requirements.txt                 # Python dependencies (M365 Agents SDK + OpenAI)
+├── prompts/
+│   └── orchestrator_agent.md        # System prompt (shared)
+├── src/
+│   ├── __init__.py
+│   ├── main.py                      # Entry point — logging + server start
+│   ├── agent.py                     # AgentApplication + Azure OpenAI + MCP tools
+│   └── start_server.py              # aiohttp server (/api/messages)
+└── README.md                        # M365-specific setup instructions
 ```
+
+### M365 Channels Version
+
+The `m365_agents_orchestrator/` folder contains the same orchestrator agent re-implemented using the [Microsoft 365 Agents SDK](https://github.com/microsoft/Agents) for deployment to M365 channels (Teams, Outlook, Copilot, Web Chat, and more) via Azure Bot Service. See the [M365 orchestrator README](m365_agents_orchestrator/README.md) for setup instructions.
 
 ## How It Works
 

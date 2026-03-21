@@ -1,0 +1,13 @@
+# M365 Agents SDK
+python-dotenv
+aiohttp
+microsoft-agents-hosting-aiohttp
+microsoft-agents-hosting-core
+microsoft-agents-authentication-msal
+microsoft-agents-activity
+
+# Azure OpenAI (Responses API with hosted MCP tools)
+openai
+
+# Fabric authentication
+azure-identity
