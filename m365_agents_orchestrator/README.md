@@ -169,7 +169,7 @@ Follow the same customisation steps described in the [main README](../README.md#
 1. Create your Fabric data agents
 2. Construct MCP endpoint URLs
 3. Update `.env` with your URLs
-4. Add/remove MCP tool definitions in `src/agent.py` (`_MCP_TOOLS` list)
+4. Add/remove MCP tool definitions in `src/agent.py` (inside the `_build_mcp_tools()` function)
 5. Update the system prompt in `prompts/orchestrator_agent.md`
 6. Configure authentication
 
