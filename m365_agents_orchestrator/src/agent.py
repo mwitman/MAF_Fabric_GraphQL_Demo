@@ -119,7 +119,7 @@ MAX_HISTORY_TURNS = 20
 
 
 def _get_history(conversation_id: str) -> list[dict]:
-    """Return (and lazily initialise) the message history for a conversation."""
+    """Return (and lazily initialize) the message history for a conversation."""
     if conversation_id not in _conversation_history:
         _conversation_history[conversation_id] = []
     return _conversation_history[conversation_id]
