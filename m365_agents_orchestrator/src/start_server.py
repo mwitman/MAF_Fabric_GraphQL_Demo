@@ -2,22 +2,51 @@
 
 Exposes a ``/api/messages`` endpoint that Azure Bot Service (and therefore
 Teams, Outlook, Copilot, and other M365 channels) can send activities to.
+
+Supports anonymous mode for local testing with the Bot Framework Emulator
+(set ``USE_ANONYMOUS_MODE=True`` in ``.env``).
 """
 
 from os import environ
 
-from microsoft_agents.hosting.core import AgentApplication, AgentAuthConfiguration
+from aiohttp.web import Application, Request, Response, run_app
+from aiohttp.web_middlewares import middleware
 from microsoft_agents.hosting.aiohttp import (
-    start_agent_process,
-    jwt_authorization_middleware,
     CloudAdapter,
+    jwt_authorization_middleware,
+    start_agent_process,
 )
-from aiohttp.web import Request, Response, Application, run_app
+from microsoft_agents.hosting.core import (
+    AgentApplication,
+    AgentAuthConfiguration,
+    AuthenticationConstants,
+    ClaimsIdentity,
+)
+
+
+def _build_anonymous_claims_middleware():
+    """Middleware that injects anonymous claims so auth is bypassed locally."""
+
+    @middleware
+    async def anonymous_claims_middleware(request, handler):
+        request["claims_identity"] = ClaimsIdentity(
+            {
+                AuthenticationConstants.AUDIENCE_CLAIM: "anonymous",
+                AuthenticationConstants.APP_ID_CLAIM: "anonymous-app",
+            },
+            False,
+            "Anonymous",
+        )
+        return await handler(request)
+
+    return anonymous_claims_middleware
 
 
 def start_server(
     agent_application: AgentApplication,
     auth_configuration: AgentAuthConfiguration,
+    *,
+    anonymous_mode: bool = False,
 ):
     """Start the aiohttp web server with JWT auth middleware."""
 
@@ -26,7 +55,12 @@ def start_server(
         adapter: CloudAdapter = req.app["adapter"]
         return await start_agent_process(req, agent, adapter)
 
-    app = Application(middlewares=[jwt_authorization_middleware])
+    if anonymous_mode:
+        middlewares = [_build_anonymous_claims_middleware()]
+    else:
+        middlewares = [jwt_authorization_middleware]
+
+    app = Application(middlewares=middlewares)
     app.router.add_post("/api/messages", entry_point)
     app["agent_configuration"] = auth_configuration
     app["agent_app"] = agent_application

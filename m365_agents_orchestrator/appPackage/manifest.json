@@ -1,0 +1,53 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.19/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.19",
+  "version": "1.0.0",
+  "id": "0e14f952-97ab-4bc1-80a1-8f904ffd2783",
+  "developer": {
+    "name": "Solventum Demo",
+    "websiteUrl": "https://github.com/solventum",
+    "privacyUrl": "https://privacy.microsoft.com",
+    "termsOfUseUrl": "https://www.microsoft.com/servicesagreement"
+  },
+  "name": {
+    "short": "Fabric Data Orchestrator",
+    "full": "Fabric Data Agents Orchestrator"
+  },
+  "description": {
+    "short": "Query Fabric data agents for sales, customers, and products",
+    "full": "An orchestrator agent that queries three Microsoft Fabric data agents (Sales, Customer, Product) via hosted MCP endpoints. Ask anything about sales orders, customers, or products."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#0078D4",
+  "bots": [
+    {
+      "botId": "0e14f952-97ab-4bc1-80a1-8f904ffd2783",
+      "scopes": [
+        "personal",
+        "team",
+        "groupChat"
+      ],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": ["personal"],
+          "commands": [
+            {
+              "title": "help",
+              "description": "Show what I can do"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "permissions": [
+    "identity",
+    "messageTeamMembers"
+  ],
+  "validDomains": []
+}

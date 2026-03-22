@@ -102,7 +102,36 @@ devtunnel host -p 3978 --allow-anonymous
 
 Note the `Connect via browser:` URL and update the Azure Bot **Messaging endpoint** to `{tunnel-url}/api/messages`.
 
-### 5. Log in to Azure (for Fabric token)
+### 5. Configure Fabric SSO/OBO (per-user Fabric access)
+
+To have each Teams user query Fabric with **their own identity**, configure an OAuth connection on your Azure Bot:
+
+1. **Add API permission** to your Entra ID app registration:
+   - Azure portal → App registrations → your app → **API permissions** → Add a permission
+   - APIs my organization uses → search `Power BI Service` (or `https://analysis.windows.net`)
+   - Delegated permissions → select `Workspace.Read.All` (or the Fabric scopes you need)
+   - Grant admin consent
+
+2. **Create an OAuth connection** on the Azure Bot resource:
+   - Azure portal → Azure Bot → **Configuration** → **OAuth Connection Settings** → Add
+   - **Name**: `FabricOAuth` (must match `FABRIC_ABS_OAUTH_CONNECTION_NAME` in `.env`)
+   - **Service Provider**: `Azure Active Directory v2`
+   - **Client ID**: your bot app registration client ID
+   - **Client Secret**: your bot app registration secret
+   - **Tenant ID**: your tenant (or `common` for multi-tenant)
+   - **Scopes**: `https://api.fabric.microsoft.com/.default`
+
+3. **Update `.env`**:
+   ```dotenv
+   USE_ANONYMOUS_MODE=False
+   FABRIC_ABS_OAUTH_CONNECTION_NAME=FabricOAuth
+   ```
+
+When a Teams user sends a message, the SDK will silently attempt SSO. If successful, the user's token is exchanged via OBO for a Fabric-scoped token, which is passed to the MCP tool headers. The user never sees a sign-in prompt (unless SSO can't complete silently).
+
+### 6. Log in to Azure (local dev only)
+
+When running in **anonymous mode** (`USE_ANONYMOUS_MODE=True`), the agent uses your local Azure CLI session for Fabric access:
 
 ```bash
 az login --tenant "<your-tenant>.onmicrosoft.com"
@@ -110,7 +139,7 @@ az login --tenant "<your-tenant>.onmicrosoft.com"
 
 The agent uses `DefaultAzureCredential` → `AzureCliCredential` to obtain a Fabric bearer token for MCP authentication.
 
-### 6. Start the agent
+### 7. Start the agent
 
 ```bash
 python -m src.main
@@ -122,7 +151,7 @@ You should see:
 ======== Running on http://localhost:3978 ========
 ```
 
-### 7. Test in a channel
+### 8. Test in a channel
 
 - **Web Chat**: Go to your Azure Bot Service resource → **Test in Web Chat**
 - **Teams**: Add the bot to Teams via the Azure Bot **Channels** configuration
@@ -147,7 +176,11 @@ m365_agents_orchestrator/
 ## How It Works
 
 1. **M365 Channel Ingress** — User messages arrive through Teams, Outlook, or other M365 channels via Azure Bot Service. The M365 Agents SDK (`AgentApplication`) receives them on the `/api/messages` endpoint.
-2. **Authentication** — `DefaultAzureCredential` obtains a Fabric access token (`https://api.fabric.microsoft.com/.default`), which is passed in headers to each MCP endpoint. Bot-to-channel auth uses MSAL via the M365 Agents SDK.
+2. **Authentication** — Two modes:
+   - **Local (anonymous mode)**: `DefaultAzureCredential` obtains a Fabric token from your `az login` session.
+   - **Teams (SSO/OBO)**: The M365 Agents SDK silently signs in the Teams user via SSO, then exchanges the token (On-Behalf-Of) for a Fabric-scoped token (`https://api.fabric.microsoft.com/.default`). Each user's own Fabric permissions are honoured.
+   
+   Bot-to-channel auth uses MSAL via the M365 Agents SDK.
 3. **Azure OpenAI Responses API** — The user's message (plus conversation history and system prompt) is sent to Azure OpenAI's Responses API with three MCP tool definitions. Azure OpenAI decides which tool(s) to invoke and calls the Fabric MCP endpoints server-side.
 4. **Response Delivery** — The combined response is sent back to the user through the same M365 channel.
 
