@@ -16,44 +16,44 @@ Both share the same system prompt (`prompts/orchestrator_agent.md`) and the same
 ## Architecture
 
 ```
-┌───────────────────────────────────────────────────────────────────────────┐
-│                          User Interfaces                                 │
-│                                                                          │
-│   ┌──────────────┐              ┌───────────────────────────────────┐    │
-│   │   DevUI       │              │  M365 Channels                   │    │
-│   │  (localhost)  │              │  (Teams / Outlook / Copilot)     │    │
-│   └──────┬───────┘              └──────────────┬────────────────────┘    │
-│          │                                      │                        │
-│          │  agents/                              │  m365_agents_          │
-│          │  orchestrator_agent/                  │  orchestrator/         │
-│          │  agent.py                             │  src/agent.py          │
-└──────────┼──────────────────────────────────────┼────────────────────────┘
-           │                                      │
-           │  DefaultAzureCredential               │  SSO → OBO token
-           │  (az login)                           │  (Bot Service OAuth)
-           ▼                                      ▼
-┌───────────────────────────────────────────────────────────────────────────┐
-│                     Microsoft Agent Framework (MAF)                       │
-│                                                                          │
-│   AzureOpenAIResponsesClient                                             │
-│     ├── get_mcp_tool("Sales Agent",   url, headers)                      │
-│     ├── get_mcp_tool("Customer Agent", url, headers)                     │
-│     ├── get_mcp_tool("Product Agent", url, headers)                      │
-│     └── as_agent(tools=[...], instructions=prompt)                       │
-└──────────────────────────────┬────────────────────────────────────────────┘
-                               │
-                               ▼
-┌───────────────────────────────────────────────────────────────────────────┐
-│                    Azure OpenAI Responses API                            │
-│             (hosted MCP tool execution — server-side)                    │
-└──────────────────────────────┬────────────────────────────────────────────┘
-                               │
-              ┌────────────────┼────────────────┐
-              ▼                ▼                ▼
-     ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-     │ Sales Agent  │ │Customer Agent│ │Product Agent │
-     │ (Fabric MCP) │ │ (Fabric MCP) │ │ (Fabric MCP) │
-     └──────────────┘ └──────────────┘ └──────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                        User Interfaces                              │
+│                                                                     │
+│  ┌──────────────┐            ┌─────────────────────────────────┐    │
+│  │    DevUI      │            │  M365 Channels                  │    │
+│  │  (localhost)  │            │  (Teams / Outlook / Copilot)    │    │
+│  └──────┬───────┘            └───────────────┬─────────────────┘    │
+│         │                                    │                      │
+│         │  agents/                           │  m365_agents_        │
+│         │  orchestrator_agent/               │  orchestrator/       │
+│         │  agent.py                          │  src/agent.py        │
+└─────────┼────────────────────────────────────┼──────────────────────┘
+          │                                    │
+          │  DefaultAzureCredential            │  SSO → OBO token
+          │  (az login)                        │  (Bot Service OAuth)
+          ▼                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                   Microsoft Agent Framework (MAF)                   │
+│                                                                     │
+│  AzureOpenAIResponsesClient                                         │
+│    ├── get_mcp_tool("Sales Agent",    url, headers)                 │
+│    ├── get_mcp_tool("Customer Agent", url, headers)                 │
+│    ├── get_mcp_tool("Product Agent",  url, headers)                 │
+│    └── as_agent(tools=[...], instructions=prompt)                   │
+└────────────────────────────────┬────────────────────────────────────┘
+                                 │
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                  Azure OpenAI Responses API                         │
+│           (hosted MCP tool execution — server-side)                 │
+└────────────────────────────────┬────────────────────────────────────┘
+                                 │
+                ┌────────────────┼────────────────┐
+                ▼                ▼                ▼
+       ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+       │ Sales Agent  │ │Customer Agent│ │Product Agent │
+       │ (Fabric MCP) │ │ (Fabric MCP) │ │ (Fabric MCP) │
+       └──────────────┘ └──────────────┘ └──────────────┘
 ```
 
 ---
