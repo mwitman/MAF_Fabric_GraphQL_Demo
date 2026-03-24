@@ -2,8 +2,22 @@
 _maf_ref/
 _mcp_ref/
 
-# Docs (internal notes)
-docs/
+# Sensitive environment files (contain API keys, secrets, connection strings)
+.env
+agents/.env
+m365_agents_orchestrator/.env
+
+# Docs not tracked in source control (internal reference only)
+docs/data-agent-mcp-agent-framework.md
+docs/fabric-mcp-agents.md
+docs/fabric-mcp-agents/
+
+# Deployment / build artifacts
+*.zip
+deploy.zip
+SolventumFabricAgents.zip
+m365_agents_orchestrator/deploy.zip
+m365_agents_orchestrator/appPackage/*.zip
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

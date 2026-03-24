@@ -67,6 +67,8 @@ def start_server(
     app["adapter"] = agent_application.adapter
 
     try:
-        run_app(app, host="localhost", port=int(environ.get("PORT", 3978)))
+        host = environ.get("HOST", "0.0.0.0")
+        port = int(environ.get("PORT", 8000))
+        run_app(app, host=host, port=port)
     except Exception as error:
         raise error
