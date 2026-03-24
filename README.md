@@ -1,243 +1,281 @@
 # Orchestrating Fabric Data Agents
 
-An orchestrator agent built with the [Microsoft Agent Framework](https://github.com/microsoft/agent-framework) that queries three Microsoft Fabric data agents (Sales, Customer, Product) via hosted MCP endpoints and exposes the experience through DevUI.
+An orchestrator agent built with the **Microsoft Agent Framework (MAF)** that queries three Microsoft Fabric data agents — **Sales**, **Customer**, and **Product** — via hosted MCP endpoints. The Azure OpenAI Responses API executes MCP tools server-side, so no local MCP server is needed.
+
+Two interfaces ship from the same codebase:
+
+| Interface | Folder | Purpose |
+|-----------|--------|---------|
+| **DevUI** | `agents/` | Local development & testing via browser UI |
+| **M365 Channels** | `m365_agents_orchestrator/` | Azure App Service bot for Teams, Outlook, Copilot |
+
+Both share the same system prompt (`prompts/orchestrator_agent.md`) and the same agent wiring pattern.
+
+---
 
 ## Architecture
 
 ```
-          ┌──────────────────────────────────┐
-          │          DevUI (port 8080)       │
-          │  ┌────────────────────────────┐  │
-          │  │  Fabric Data Agents        │  │
-          │  │  Orchestrator (Agent)      │  │
-          │  └──────────┬─────────────────┘  │
-          │             │ get_mcp_tool()     │
-          └─────────────┼────────────────────┘
-                        │
-                        │ Azure OpenAI Responses API
-                        │ (hosted MCP — server-side execution)
-                        ▼
-          ┌──────────────────────────────┐
-          │  Azure OpenAI (gpt-5-chat)   │
-          └──────┬──────────┬──────────┬─┘
-                 │          │          │
-                 ▼          ▼          ▼
-    ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
-    │ Sales Agent  │ │  Customer    │ │  Product     │
-    │ (Fabric MCP) │ │ Agent (MCP)  │ │ Agent (MCP)  │
-    └──────────────┘ └──────────────┘ └──────────────┘
+┌───────────────────────────────────────────────────────────────────────────┐
+│                          User Interfaces                                 │
+│                                                                          │
+│   ┌──────────────┐              ┌───────────────────────────────────┐    │
+│   │   DevUI       │              │  M365 Channels                   │    │
+│   │  (localhost)  │              │  (Teams / Outlook / Copilot)     │    │
+│   └──────┬───────┘              └──────────────┬────────────────────┘    │
+│          │                                      │                        │
+│          │  agents/                              │  m365_agents_          │
+│          │  orchestrator_agent/                  │  orchestrator/         │
+│          │  agent.py                             │  src/agent.py          │
+└──────────┼──────────────────────────────────────┼────────────────────────┘
+           │                                      │
+           │  DefaultAzureCredential               │  SSO → OBO token
+           │  (az login)                           │  (Bot Service OAuth)
+           ▼                                      ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│                     Microsoft Agent Framework (MAF)                       │
+│                                                                          │
+│   AzureOpenAIResponsesClient                                             │
+│     ├── get_mcp_tool("Sales Agent",   url, headers)                      │
+│     ├── get_mcp_tool("Customer Agent", url, headers)                     │
+│     ├── get_mcp_tool("Product Agent", url, headers)                      │
+│     └── as_agent(tools=[...], instructions=prompt)                       │
+└──────────────────────────────┬────────────────────────────────────────────┘
+                               │
+                               ▼
+┌───────────────────────────────────────────────────────────────────────────┐
+│                    Azure OpenAI Responses API                            │
+│             (hosted MCP tool execution — server-side)                    │
+└──────────────────────────────┬────────────────────────────────────────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              ▼                ▼                ▼
+     ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+     │ Sales Agent  │ │Customer Agent│ │Product Agent │
+     │ (Fabric MCP) │ │ (Fabric MCP) │ │ (Fabric MCP) │
+     └──────────────┘ └──────────────┘ └──────────────┘
 ```
 
-The agent uses **hosted MCP execution** — Azure OpenAI calls the Fabric data agent MCP endpoints directly (server-side), rather than the agent framework calling them locally. This avoids the need for a local MCP server.
+---
 
 ## Prerequisites
 
-- **Python 3.11+**
-- **Azure CLI** — logged in to the correct tenant
-- **Azure OpenAI** deployment with API key access
-- **Microsoft Fabric** workspace with three data agents configured (Sales, Customer, Product)
+| Requirement | Details |
+|-------------|---------|
+| **Python 3.11+** | Required runtime |
+| **Azure CLI** | Authenticated via `az login` for local development |
+| **Azure OpenAI resource** | Deployment supporting the Responses API (e.g., `gpt-4o`) |
+| **Microsoft Fabric workspace** | With three data agents (Sales, Customer, Product) created and MCP endpoints enabled |
+| **Entra ID permissions** | Your identity (or managed identity) must have access to the Fabric workspace |
 
-## Quick Start
+---
 
-### 1. Clone and create virtual environment
+## Quick Start — DevUI (Local Development)
 
-```powershell
+### 1. Create a virtual environment
+
+```bash
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+# Windows
+.venv\Scripts\activate
+# macOS/Linux
+source .venv/bin/activate
+```
+
+### 2. Install dependencies
+
+```bash
 pip install -r agents/requirements.txt
 ```
 
-### 2. Configure environment variables
+### 3. Create `agents/.env`
 
-Copy and edit `agents/.env`:
-
-```dotenv
-# Azure OpenAI
-AOAI_ENDPOINT=https://<your-aoai>.openai.azure.com/
+```env
+AOAI_ENDPOINT=https://<your-aoai-resource>.openai.azure.com/
 AOAI_KEY=<your-api-key>
-AZURE_OPENAI_DEPLOYMENT_NAME=<your-deployment>
+AZURE_OPENAI_DEPLOYMENT_NAME=<your-deployment-name>
 
-# Fabric Data Agent MCP URLs
+# NOTE: Do NOT set AZURE_OPENAI_API_VERSION — the MAF SDK default ("preview")
+# is correct. Setting an explicit dated version causes 400 errors.
+
 FABRIC_SALES_AGENT_MCP_URL=https://api.fabric.microsoft.com/v1/mcp/workspaces/<workspace-id>/dataagents/<sales-agent-id>/agent
 FABRIC_CUSTOMER_AGENT_MCP_URL=https://api.fabric.microsoft.com/v1/mcp/workspaces/<workspace-id>/dataagents/<customer-agent-id>/agent
 FABRIC_PRODUCT_AGENT_MCP_URL=https://api.fabric.microsoft.com/v1/mcp/workspaces/<workspace-id>/dataagents/<product-agent-id>/agent
 ```
 
-### 3. Log in to Azure (for Fabric token)
+### 4. Authenticate to Azure
 
-```powershell
-az login --tenant "<your-tenant>.onmicrosoft.com"
+```bash
+az login
 ```
 
-The agent uses `DefaultAzureCredential` → `AzureCliCredential` to obtain a Fabric bearer token for MCP authentication.
+This provides `DefaultAzureCredential` with a Fabric token for MCP endpoint authentication.
 
-### 4. Launch DevUI
+### 5. Launch DevUI
 
-```powershell
+```bash
 python run.py
-# or
-.\start.ps1
 ```
 
-Open [http://127.0.0.1:8080](http://127.0.0.1:8080) in your browser.
+Opens a browser UI at `http://localhost:8080` where you can chat with the orchestrator agent.
+
+---
+
+## M365 Channels (Teams / Outlook / Copilot)
+
+The M365 deployment requires Azure Bot Service, App Service, Entra ID app registration, and an OAuth connection for Fabric SSO/OBO.
+
+See the full deployment walkthrough:
+
+- **[Getting Started — Deployment Guide](docs/getting-started-deployment-guide.md)** — step-by-step setup from scratch
+- **[M365 Implementation Overview](docs/m365-implementation-overview.md)** — architecture, auth flow, and code walkthrough
+
+The environment variable template is at [`m365_agents_orchestrator/env.TEMPLATE`](m365_agents_orchestrator/env.TEMPLATE).
+
+---
 
 ## Project Structure
 
 ```
-agents/
-├── .env                          # Environment variables (not committed)
-├── requirements.txt              # Python dependencies
+agents/                              # DevUI version (local development)
+├── .env                             # Environment variables (not committed)
+├── requirements.txt                 # Python dependencies
 └── orchestrator_agent/
-    ├── __init__.py               # DevUI auto-discovery export
-    ├── agent.py                  # Agent definition + MCP tool wiring
+    ├── __init__.py
+    ├── agent.py                     # Agent definition + MCP tool wiring
     └── prompts/
-        └── orchestrator_agent.md # System prompt (tool routing, output formatting)
-run.py                            # DevUI launcher
-start.ps1                         # PowerShell launcher (kills stale port, starts DevUI)
+        └── orchestrator_agent.md    # Shared system prompt
+
+m365_agents_orchestrator/            # M365 Channels version (Teams, Outlook, Copilot)
+├── .env                             # Local-only env vars (not committed)
+├── env.TEMPLATE                     # Template for required environment variables
+├── requirements.txt                 # Python dependencies (pinned)
+├── startup.sh                       # App Service startup command
+├── README.md
+├── appPackage/
+│   ├── manifest.json                # Teams app manifest
+│   ├── color.png
+│   └── outline.png
+├── prompts/
+│   └── orchestrator_agent.md        # Shared system prompt
+└── src/
+    ├── __init__.py
+    ├── main.py                      # Entrypoint
+    ├── agent.py                     # Core bot logic — MAF + SSO/OBO + handlers
+    └── start_server.py              # aiohttp server bootstrap
+
+docs/                                # Documentation
+├── getting-started-deployment-guide.md   # Full deployment walkthrough
+└── m365-implementation-overview.md       # Architecture & code deep-dive
+
+run.py                               # DevUI launcher
+start.ps1                            # PowerShell launcher
 ```
-
-## How It Works
-
-1. **Authentication** — `DefaultAzureCredential` obtains a Fabric access token (`https://api.fabric.microsoft.com/.default`), which is passed as a bearer token in HTTP headers to each MCP endpoint.
-2. **Tool Registration** — `client.get_mcp_tool()` registers each Fabric data agent as a hosted MCP tool on the Azure OpenAI Responses API. Azure OpenAI calls these endpoints server-side during inference.
-3. **Agent Execution** — The orchestrator agent receives a user question, Azure OpenAI decides which MCP tool(s) to invoke, executes them server-side, and streams back the combined response.
-4. **DevUI Rendering** — The agent framework DevUI renders the conversation, tool calls (with arguments), and tool results in the browser.
-
-## Fabric Data Agents
-
-| Agent | Data |
-|-------|------|
-| **Sales Agent** | Orders, order details, order status, order totals |
-| **Customer Agent** | Customer identity, addresses (billing/shipping) |
-| **Product Agent** | Products, categories, models, descriptions |
 
 ---
 
-## Adapting This Solution for Your Own Fabric Data Agents
+## How It Works
 
-This section walks through how to take this demo and connect it to your own Microsoft Fabric data agents.
+### Authentication
 
-### Step 1: Create Your Fabric Data Agents
+| Interface | Auth Method | Fabric Token Source |
+|-----------|-------------|---------------------|
+| **DevUI** | `DefaultAzureCredential` (`az login`) | Developer's own identity |
+| **M365** | Bot Service SSO → OBO token exchange | Signed-in user's identity (delegated) |
 
-In Microsoft Fabric, navigate to your workspace and create one or more **data agents**. Each data agent exposes a lakehouse, warehouse, or other Fabric data source through a natural-language query interface.
+Fabric data agents require **delegated (user) access** — app-only / managed-identity tokens are rejected by design.
 
-1. Open your Fabric workspace → **+ New** → **Data Agent**
-2. Configure each agent with the appropriate data source (e.g., a lakehouse table, SQL endpoint)
-3. Test each agent in the Fabric portal to confirm it answers queries correctly
-4. Note the **workspace ID** and **data agent ID** for each agent — you'll find these in the URL:
-   ```
-   https://app.fabric.microsoft.com/groups/<workspace-id>/dataagents/<data-agent-id>
-   ```
+### Tool Registration
 
-### Step 2: Construct MCP Endpoint URLs
+Each Fabric data agent is registered as a hosted MCP tool via the MAF SDK:
 
-Each Fabric data agent has an MCP endpoint in this format:
-
-```
-https://api.fabric.microsoft.com/v1/mcp/workspaces/<workspace-id>/dataagents/<data-agent-id>/agent
-```
-
-Build one URL per data agent you want to integrate.
-
-### Step 3: Update Environment Variables
-
-Edit `agents/.env` and replace the MCP URLs with your own:
-
-```dotenv
-# Azure OpenAI — point to your own deployment
-AOAI_ENDPOINT=https://<your-resource>.openai.azure.com/
-AOAI_KEY=<your-api-key>
-AZURE_OPENAI_DEPLOYMENT_NAME=<your-deployment-name>
-
-# Your Fabric Data Agent MCP URLs
-FABRIC_SALES_AGENT_MCP_URL=https://api.fabric.microsoft.com/v1/mcp/workspaces/<your-workspace>/dataagents/<agent-1-id>/agent
-FABRIC_CUSTOMER_AGENT_MCP_URL=https://api.fabric.microsoft.com/v1/mcp/workspaces/<your-workspace>/dataagents/<agent-2-id>/agent
-FABRIC_PRODUCT_AGENT_MCP_URL=https://api.fabric.microsoft.com/v1/mcp/workspaces/<your-workspace>/dataagents/<agent-3-id>/agent
-```
-
-> **Tip:** You can rename the environment variable keys (e.g., `FABRIC_INVENTORY_AGENT_MCP_URL`) — just update the corresponding `os.environ[...]` references in `agent.py`.
-
-### Step 4: Add, Remove, or Rename Tools
-
-In `agents/orchestrator_agent/agent.py`, each tool is registered with `client.get_mcp_tool()`. To adapt:
-
-**Add a new tool:**
 ```python
-inventory_tool = client.get_mcp_tool(
-    name="Inventory Agent",
-    url=os.environ["FABRIC_INVENTORY_AGENT_MCP_URL"],
-    headers=fabric_headers,
+client = AzureOpenAIResponsesClient(
+    endpoint=os.environ["AOAI_ENDPOINT"],
+    api_key=os.environ["AOAI_KEY"],
+    deployment_name=os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"],
+)
+
+sales_tool = client.get_mcp_tool(
+    name="Sales Agent",
+    url=os.environ["FABRIC_SALES_AGENT_MCP_URL"],
+    headers=fabric_headers,  # Bearer token for Fabric API
     approval_mode="never_require",
 )
 ```
 
-**Remove a tool:** Delete the `get_mcp_tool()` call and remove it from the `tools=[...]` list in `client.as_agent()`.
+### Agent Execution
 
-**Rename a tool:** Change the `name=` parameter. This is the label the LLM sees when deciding which tool to call, so make it descriptive.
+The agent is created with `as_agent()` and invoked with `agent.run()` (DevUI) or within the M365 bot's turn handler:
 
-Then update the `tools` list passed to the agent:
 ```python
 agent = client.as_agent(
-    name="My Orchestrator",
+    name="Fabric Data Agents Orchestrator",
     instructions=_instructions,
-    tools=[sales_tool, inventory_tool, product_tool],  # your tools here
+    tools=[sales_tool, customer_tool, product_tool],
 )
 ```
 
-### Step 5: Update the System Prompt
+Azure OpenAI's Responses API handles MCP tool execution server-side — the orchestrator sends the tool definitions and Fabric bearer token, and Azure OpenAI calls the MCP endpoints directly.
 
-Edit `agents/orchestrator_agent/prompts/orchestrator_agent.md` to reflect your tools and data:
+### Sessions
 
-- Update the **capabilities table** with your tool names and what they query
-- Adjust the **output guidelines** for your data (e.g., column names, relationships, expected formats)
-- Modify the **query routing logic** to describe when each tool should be used
-
-The system prompt is what guides the LLM to pick the right tool for a given question, so be specific about what each agent can answer.
-
-### Step 6: Configure Authentication
-
-The agent authenticates to Fabric using the Azure CLI credential. Ensure the logged-in identity has:
-
-- **Viewer** (or higher) access to the Fabric workspace
-- Access to the underlying data sources each data agent queries
-
-```powershell
-# Log in with the correct tenant
-az login --tenant "<your-tenant>.onmicrosoft.com"
-
-# Verify the right account is active
-az account show
-```
-
-For production or shared deployments, consider using a **service principal** or **managed identity** instead of the CLI credential. `DefaultAzureCredential` supports both automatically.
-
-### Step 7: Launch and Test
-
-```powershell
-python run.py
-```
-
-Open http://127.0.0.1:8080, select your agent, and ask a question. Verify in the **Tools** panel that:
-- The correct tool is invoked
-- Arguments contain the user question
-- The result shows the data agent's response
-
-### Common Customizations
-
-| Scenario | What to change |
-|----------|---------------|
-| **Different number of agents** | Add/remove `get_mcp_tool()` calls and update the `tools` list |
-| **Different Azure OpenAI model** | Change `AZURE_OPENAI_DEPLOYMENT_NAME` in `.env` |
-| **Entra ID auth (no API key)** | Replace `api_key=` with `credential=DefaultAzureCredential()` in `AzureOpenAIResponsesClient` |
-| **Custom port** | Change `"8080"` in `run.py` |
-| **Multi-turn memory** | Add `context_providers` or `history_providers` to the agent (see `_maf_ref/02-agents/context_providers/`) |
-| **Workflow orchestration** | Wrap the agent in a workflow for approval flows, parallel tool calls, etc. (see `_maf_ref/03-workflows/`) |
+- **DevUI** — each browser session is a separate conversation with its own history.
+- **M365** — conversation state is managed per Teams conversation via `MemoryStorage`. The M365 version also handles `signin/tokenExchange`, `signin/verifystate`, and `signin/failure` invoke activities for SSO flow.
 
 ---
 
-## Modification Notes
+## Fabric Data Agents
 
-The following patches were applied to the installed `agent-framework-devui` and `agent-framework` packages to support hosted MCP tool call/result rendering in DevUI. These are fixes for gaps in the current RC releases and will likely be resolved in future versions.
+| Agent | Data Domain | Key Tables |
+|-------|-------------|------------|
+| **Sales Agent** | Orders, order status, order totals, line items | SalesOrderHeader, SalesOrderDetail |
+| **Customer Agent** | Customer identity, addresses (billing/shipping) | Customer, CustomerAddress, Address |
+| **Product Agent** | Products, categories, models, descriptions | Product, ProductCategory, ProductModel, ProductDescription |
+
+MCP endpoint pattern:
+```
+https://api.fabric.microsoft.com/v1/mcp/workspaces/<workspace-id>/dataagents/<agent-id>/agent
+```
+
+See each agent's Fabric workspace page for endpoint details and schemas.
+
+---
+
+## SDK Versions
+
+> **Important:** The `openai` SDK version matters — different versions construct Azure OpenAI URLs differently, which can cause silent failures or 4xx errors.
+
+| Package | Version | Notes |
+|---------|---------|-------|
+| `agent-framework-azure-ai` | `1.0.0b251007` | MAF Azure AI integration |
+| `agent-framework-core` | `1.0.0rc3` | MAF core runtime |
+| `openai` | `2.8.1` | Pinned — URL construction varies across versions |
+| `microsoft-agents-hosting-aiohttp` | `0.8.0` | M365 Agents SDK |
+| `microsoft-agents-hosting-core` | `0.8.0` | M365 Agents SDK |
+| `microsoft-agents-authentication-msal` | `0.8.0` | M365 Agents SDK |
+| `microsoft-agents-activity` | `0.8.0` | M365 Agents SDK |
+| `azure-identity` | `≥1.19.0` | Entra ID / DefaultAzureCredential |
+
+### AZURE_OPENAI_API_VERSION — Do Not Set
+
+Do **not** set the `AZURE_OPENAI_API_VERSION` environment variable. The MAF SDK uses a default value (`"preview"`) that works correctly with the Responses API. Setting an explicit dated version (e.g., `2025-03-01-preview`) causes **400 errors**.
+
+---
+
+## Adapting for Your Own Fabric Data Agents
+
+1. **Create Fabric data agents** in your workspace — each agent exposes a lakehouse, warehouse, or other Fabric data source through a natural-language query interface.
+2. **Update `.env`** with the new MCP URLs for each agent (format: `https://api.fabric.microsoft.com/v1/mcp/workspaces/<workspace-id>/dataagents/<agent-id>/agent`).
+3. **Add or remove `get_mcp_tool()` calls** in `agent.py` to match your agents, and update the `tools=[...]` list in `as_agent()`.
+4. **Update the system prompt** in `prompts/orchestrator_agent.md` — describe each agent's capabilities so the orchestrator routes queries correctly.
+5. **Configure auth** — ensure your identity (local dev via `az login`) or the bot's OAuth connection (M365) has access to the Fabric workspace.
+
+---
+
+## Modification Notes — DevUI Patches
+
+Two files in the installed `agent-framework-devui` and `agent-framework` packages required local patches for correct MCP tool rendering in the DevUI. These fix gaps in the current RC releases and will likely be resolved in future versions.
 
 ### `agent_framework_devui/_mapper.py`
 
@@ -258,3 +296,18 @@ The following patches were applied to the installed `agent-framework-devui` and 
 3. **`response.mcp_call_arguments.delta` / `.done` handlers** — New cases that convert MCP argument streaming events into `Content.from_mcp_server_tool_call` with the argument data, so DevUI can display what was sent to each tool.
 
 > **Note:** These patches live in `.venv/Lib/site-packages/` and will be lost on `pip install --force-reinstall`. They should be re-applied after dependency updates until the framework ships native support.
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Getting Started — Deployment Guide](docs/getting-started-deployment-guide.md) | Full step-by-step M365 deployment |
+| [M365 Implementation Overview](docs/m365-implementation-overview.md) | Architecture, auth flow, code walkthrough |
+
+---
+
+## License
+
+See [LICENSE](LICENSE).

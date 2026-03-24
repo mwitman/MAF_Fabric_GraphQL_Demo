@@ -1,0 +1,78 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.21/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.21",
+  "version": "1.0.1",
+  "id": "46b2e0d8-c4c6-48e5-86d3-707e54c5ca03",
+  "developer": {
+    "name": "Solventum Demo",
+    "websiteUrl": "https://github.com/solventum",
+    "privacyUrl": "https://privacy.microsoft.com",
+    "termsOfUseUrl": "https://www.microsoft.com/servicesagreement"
+  },
+  "name": {
+    "short": "Fabric Agents Orchestrator",
+    "full": "Fabric Data Agents Orchestrator"
+  },
+  "description": {
+    "short": "Orchestrates Fabric data agents for sales, customers, and products",
+    "full": "Orchestrates three Fabric data agent MCP tools (Sales, Customer, Product) to answer business questions across orders, customers, addresses, products, categories, and more."
+  },
+  "icons": {
+    "outline": "outline.png",
+    "color": "color.png"
+  },
+  "accentColor": "#00A651",
+  "bots": [
+    {
+      "botId": "46b2e0d8-c4c6-48e5-86d3-707e54c5ca03",
+      "scopes": [
+        "personal",
+        "team",
+        "groupChat"
+      ],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": ["personal", "team", "groupChat"],
+          "commands": [
+            {
+              "title": "What were the top 10 sales orders last quarter?",
+              "description": "Query sales data from Fabric"
+            },
+            {
+              "title": "Show me details for customer Contoso Ltd",
+              "description": "Look up customer information"
+            },
+            {
+              "title": "Which products have the highest margin?",
+              "description": "Analyze product profitability"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "copilotAgents": {
+    "customEngineAgents": [
+      {
+        "type": "bot",
+        "id": "46b2e0d8-c4c6-48e5-86d3-707e54c5ca03"
+      }
+    ]
+  },
+  "permissions": [
+    "identity",
+    "messageTeamMembers"
+  ],
+  "webApplicationInfo": {
+    "id": "46b2e0d8-c4c6-48e5-86d3-707e54c5ca03",
+    "resource": "api://botid-46b2e0d8-c4c6-48e5-86d3-707e54c5ca03"
+  },
+  "validDomains": [
+    "solv-bot-demo-app.azurewebsites.net",
+    "token.botframework.com",
+    "login.microsoftonline.com",
+    "login.windows.net"
+  ]
+}

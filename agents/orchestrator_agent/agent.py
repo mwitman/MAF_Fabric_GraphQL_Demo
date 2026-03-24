@@ -7,10 +7,10 @@ DevUI discovers this agent via the __init__.py that exports `agent`.
 """
 
 import os
+import time
 from pathlib import Path
 
 from azure.identity import DefaultAzureCredential
-from agent_framework import AgentMiddleware
 from agent_framework.azure import AzureOpenAIResponsesClient
 from dotenv import load_dotenv
 
@@ -29,41 +29,33 @@ _instructions = _prompt_path.read_text(encoding="utf-8")
 # ---------------------------------------------------------------------------
 # DefaultAzureCredential supports az login (local dev) and managed identity
 # (production). A Fabric token is requested explicitly for MCP headers.
-# The token is refreshed before every agent invocation via middleware so that
-# long-running DevUI sessions never hit 401s from expired tokens.
 FABRIC_DATA_AGENT_SCOPE = "https://api.fabric.microsoft.com/.default"
 
 credential = DefaultAzureCredential()
+_cached_token = credential.get_token(FABRIC_DATA_AGENT_SCOPE)
 
-# Shared headers dict — get_mcp_tool stores a *reference*, so mutating
-# this dict in-place before each call propagates to all MCP tools.
+# Refresh the token if it expires within this many seconds
+_TOKEN_REFRESH_BUFFER_SECS = 300  # 5 minutes
+
 fabric_headers = {
-    "Authorization": "",
+    "Authorization": f"Bearer {_cached_token.token}",
     "Content-Type": "application/json",
 }
 
 
-def _refresh_fabric_token():
-    """Refresh the Fabric bearer token in-place.
+def refresh_fabric_headers() -> None:
+    """Refresh the Fabric bearer token in-place when it is expired or near expiry.
 
-    DefaultAzureCredential.get_token() caches internally and only hits
-    the network when the token is actually expired, so calling this
-    before every request is cheap.
+    The ``fabric_headers`` dict is shared by reference with all MCP tool
+    definitions.  Mutating it in-place ensures that subsequent Azure OpenAI
+    Responses API calls include a valid token without recreating tools or the
+    agent.
     """
-    token = credential.get_token(FABRIC_DATA_AGENT_SCOPE).token
-    fabric_headers["Authorization"] = f"Bearer {token}"
+    global _cached_token
 
-
-class RefreshTokenMiddleware(AgentMiddleware):
-    """Agent middleware that refreshes the Fabric token before each invocation."""
-
-    async def process(self, context, call_next):
-        _refresh_fabric_token()
-        await call_next()
-
-
-# Fetch an initial token so tool registration succeeds
-_refresh_fabric_token()
+    if time.time() >= _cached_token.expires_on - _TOKEN_REFRESH_BUFFER_SECS:
+        _cached_token = credential.get_token(FABRIC_DATA_AGENT_SCOPE)
+        fabric_headers["Authorization"] = f"Bearer {_cached_token.token}"
 
 # ---------------------------------------------------------------------------
 # Azure OpenAI client (API key auth)
@@ -110,5 +102,4 @@ agent = client.as_agent(
     ),
     instructions=_instructions,
     tools=[sales_tool, customer_tool, product_tool],
-    middleware=[RefreshTokenMiddleware()],
 )
