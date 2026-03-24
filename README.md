@@ -20,8 +20,8 @@ Both share the same system prompt (`prompts/orchestrator_agent.md`) and the same
 │                        User Interfaces                              │
 │                                                                     │
 │  ┌──────────────┐            ┌─────────────────────────────────┐    │
-│  │    DevUI      │            │  M365 Channels                  │    │
-│  │  (localhost)  │            │  (Teams / Outlook / Copilot)    │    │
+│  │    DevUI     │            │  M365 Channels                  │    │
+│  │  (localhost) │            │  (Teams / Outlook / Copilot)    │    │
 │  └──────┬───────┘            └───────────────┬─────────────────┘    │
 │         │                                    │                      │
 │         │  agents/                           │  m365_agents_        │
