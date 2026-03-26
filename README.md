@@ -305,6 +305,7 @@ Two files in the installed `agent-framework-devui` and `agent-framework` package
 |----------|-------------|
 | [Getting Started — Deployment Guide](docs/getting-started-deployment-guide.md) | Full step-by-step M365 deployment |
 | [M365 Implementation Overview](docs/m365-implementation-overview.md) | Architecture, auth flow, code walkthrough |
+| [Local Testing Guide](docs/local-testing-guide.md) | DevUI and Bot Framework Emulator setup |
 
 ---
 

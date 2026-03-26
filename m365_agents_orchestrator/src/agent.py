@@ -123,7 +123,10 @@ def _ensure_credential() -> DefaultAzureCredential:
     global _credential
     if _credential is None:
         logger.info("Creating DefaultAzureCredential (local-dev fallback)")
-        _credential = DefaultAzureCredential(logging_enable=True)
+        _credential = DefaultAzureCredential(
+            logging_enable=True,
+            exclude_managed_identity_credential=True,  # skip IMDS probe (30s timeout on local dev)
+        )
     return _credential
 
 

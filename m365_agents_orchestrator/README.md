@@ -38,7 +38,7 @@ The agent uses **hosted MCP execution** — Azure OpenAI calls the Fabric data a
 
 ## Prerequisites
 
-- **Python 3.9+**
+- **Python 3.11+**
 - **Azure CLI** — logged in to the correct tenant
 - **Azure Bot registration** — with Client ID, Client Secret, and Tenant ID
 - **Azure OpenAI** deployment with API key access (model supporting Responses API)
@@ -80,7 +80,7 @@ CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID=<your-tenant-id>
 AOAI_ENDPOINT=https://<your-aoai>.openai.azure.com/
 AOAI_KEY=<your-api-key>
 AZURE_OPENAI_DEPLOYMENT_NAME=<your-deployment>
-AZURE_OPENAI_API_VERSION=2025-03-01-preview
+# NOTE: Do NOT set AZURE_OPENAI_API_VERSION — the MAF SDK default ("preview") is correct.
 
 # Fabric Data Agent MCP URLs
 FABRIC_SALES_AGENT_MCP_URL=https://api.fabric.microsoft.com/v1/mcp/workspaces/<workspace-id>/dataagents/<sales-agent-id>/agent
@@ -97,7 +97,7 @@ FABRIC_PRODUCT_AGENT_MCP_URL=https://api.fabric.microsoft.com/v1/mcp/workspaces/
 ### 4. Set up a dev tunnel (local development)
 
 ```bash
-devtunnel host -p 3978 --allow-anonymous
+devtunnel host -p 8000 --allow-anonymous
 ```
 
 Note the `Connect via browser:` URL and update the Azure Bot **Messaging endpoint** to `{tunnel-url}/api/messages`.
@@ -148,7 +148,7 @@ python -m src.main
 You should see:
 
 ```
-======== Running on http://localhost:3978 ========
+======== Running on http://0.0.0.0:8000 ========
 ```
 
 ### 8. Test in a channel
