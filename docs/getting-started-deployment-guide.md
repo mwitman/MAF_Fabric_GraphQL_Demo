@@ -227,20 +227,48 @@ A template file is provided at `m365_agents_orchestrator/env.TEMPLATE`.
 
 ### Option A: ZIP Deploy (recommended)
 
-1. From the repo root, create a deployment zip of the `m365_agents_orchestrator/` directory:
+1. From the repo root, create a deployment zip containing **only** the required files from `m365_agents_orchestrator/`. Do **not** include `.env`, `.venv/`, `__pycache__/`, or `appPackage/` — secrets live in App Service app settings and the Teams package is uploaded separately.
 
    ```powershell
-   $base = "path\to\Solventum_MAF_Fabric_Demo"
+   $srcDir = "path\to\Solventum_MAF_Fabric_Demo\m365_agents_orchestrator"
    $zipPath = "$env:TEMP\m365-bot-deploy.zip"
    
    # Remove old zip if it exists
    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
    
-   # Create zip from the m365_agents_orchestrator directory
+   # Stage only the files needed for deployment
+   $staging = "$env:TEMP\bot-staging"
+   if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
+   New-Item $staging -ItemType Directory | Out-Null
+   
+   Copy-Item "$srcDir\requirements.txt" $staging
+   Copy-Item "$srcDir\startup.sh" $staging
+   Copy-Item "$srcDir\src" "$staging\src" -Recurse
+   Copy-Item "$srcDir\prompts" "$staging\prompts" -Recurse
+   
+   # Remove __pycache__ from staging
+   Get-ChildItem $staging -Directory -Recurse -Filter "__pycache__" |
+       Remove-Item -Recurse -Force
+   
+   # Create zip
    Add-Type -AssemblyName System.IO.Compression.FileSystem
-   [System.IO.Compression.ZipFile]::CreateFromDirectory(
-       "$base\m365_agents_orchestrator", $zipPath
-   )
+   [System.IO.Compression.ZipFile]::CreateFromDirectory($staging, $zipPath)
+   
+   # Cleanup staging
+   Remove-Item $staging -Recurse -Force
+   ```
+
+   The zip should contain:
+   ```
+   requirements.txt
+   startup.sh
+   src/
+     __init__.py
+     main.py
+     agent.py
+     start_server.py
+   prompts/
+     orchestrator_agent.md
    ```
 
 2. Deploy to Azure App Service:
@@ -283,7 +311,7 @@ A template file is provided at `m365_agents_orchestrator/env.TEMPLATE`.
    python -m src.main
    ```
 
-6. The bot starts on `http://localhost:8080/api/messages`.
+6. The bot starts on `http://localhost:8000/api/messages`.
 
 ---
 
@@ -392,6 +420,8 @@ Users must have at least **Viewer** role on the Fabric workspace. The bot uses t
 | 400 "API version not supported" | `AZURE_OPENAI_API_VERSION` is set as an App Setting, overriding the MAF default | Remove the `AZURE_OPENAI_API_VERSION` App Setting entirely — the MAF SDK default (`"preview"`) is correct |
 | `ModuleNotFoundError: No module named 'src'` after App Setting change | Removing/adding an App Setting restarts the app but the venv wasn't persisted from the last deploy | Redeploy the zip to trigger an Oryx build (this recreates the venv with `pip install`) |
 | 500 from Bot Framework token service | Bot Service messaging endpoint URL doesn't match App Service | Verify `https://<app>.azurewebsites.net/api/messages` in Bot Configuration |
+| `az webapp deploy` fails with SSL error | Corporate VPN/proxy performing SSL inspection | Set `$env:AZURE_CLI_DISABLE_CONNECTION_VERIFICATION=1` before the deploy command, then unset it after: `Remove-Item Env:AZURE_CLI_DISABLE_CONNECTION_VERIFICATION` |
+| Container exits with code 2 during startup | Python crash at import time — usually a missing env var or uninstalled dependency | Check App Service logs (`az webapp log tail`) for the traceback. Verify all required app settings are configured and redeploy the zip to trigger an Oryx build |
 
 ### Checking Logs
 
