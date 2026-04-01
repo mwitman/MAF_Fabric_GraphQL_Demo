@@ -1,0 +1,6 @@
+agent-framework-azure-ai
+agent-framework-ag-ui
+python-dotenv
+azure-identity
+fastapi
+uvicorn[standard]
