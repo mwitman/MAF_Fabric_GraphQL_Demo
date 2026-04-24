@@ -1,5 +1,443 @@
 # Local Testing Guide
 
+Three ways to test the GraphQL Agents Orchestrator locally before deploying to Azure:
+
+1. **DevUI** — MAF built-in browser chat UI (lightest weight, no frontend build needed)
+2. **Custom UX** — React + FastAPI chat app with Mem0 memory (full-featured)
+3. **Bot Framework Emulator** — tests the full M365 Agents SDK bot pipeline
+
+All three use `DefaultAzureCredential` (`az login`) for Fabric authentication.
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|-------------|---------|
+| Python 3.11+ | Required runtime |
+| Node.js 18+ | Custom UX frontend only |
+| Azure CLI | Authenticated via `az login` with Fabric workspace access |
+| Azure OpenAI | API key + deployment name |
+| Fabric workspace | With GraphQL API endpoints |
+
+---
+
+## Option 1: DevUI (Quickest Start)
+
+DevUI is a browser-based chat interface provided by the `agent-framework-devui` package. It discovers the agent from `graphql_agents/orchestrator_agent/__init__.py` and runs it directly — no frontend build, no FastAPI, no bot framework.
+
+### Setup
+
+```powershell
+# From the repo root
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+pip install -r graphql_agents\requirements.txt
+```
+
+### Configure
+
+```powershell
+Copy-Item graphql_agents\.env.template graphql_agents\.env
+# Edit graphql_agents/.env with your Azure OpenAI and Fabric GraphQL details
+```
+
+### Run
+
+```powershell
+az login
+python graphql_agents\run.py
+```
+
+Opens a browser UI at `http://localhost:8080`. Type a question and the orchestrator routes it to the appropriate sub-agent.
+
+You can also run DevUI directly via the CLI:
+
+```powershell
+devui .\graphql_agents --port 8080
+```
+
+### When to Use
+
+- Fastest way to test agent behaviour and prompt changes
+- No Node.js or frontend build required
+- Debugging sub-agent routing and GraphQL query generation
+- Quick demos
+
+---
+
+## Option 2: Custom UX (Full-Featured)
+
+The Custom UX (`graphql_agents/`) provides the production-style React + FastAPI chat interface with streaming responses and Mem0 persistent memory.
+
+### Setup
+
+```powershell
+# From the repo root (reuse the same venv)
+pip install -r graphql_agents\backend\requirements.txt
+
+cd graphql_agents\frontend
+npm install
+cd ..\..
+```
+
+### Configure
+
+```powershell
+Copy-Item graphql_agents\.env.template graphql_agents\.env
+# Edit graphql_agents/.env with your Azure OpenAI and Fabric details
+```
+
+### Run
+
+```powershell
+az login
+cd graphql_agents
+.\start_ui.ps1
+```
+
+Open `http://localhost:5173`.
+
+### When to Use
+
+- Iterating on the frontend UI
+- Testing Mem0 persistent memory
+- Testing the full streaming SSE pipeline
+- Production-like demos
+
+---
+
+## Option 3: Bot Framework Emulator
+
+The Emulator tests the full M365 Agents SDK pipeline — activity routing, SSO handler stubs, and MAF orchestration — using anonymous auth locally.
+
+### Install the Emulator
+
+Download from: https://github.com/microsoft/BotFramework-Emulator/releases
+
+### Setup
+
+```powershell
+# From the repo root (reuse the same venv)
+pip install -r m365_graphql_orchestrator\requirements.txt
+```
+
+### Configure
+
+```powershell
+Copy-Item m365_graphql_orchestrator\env.TEMPLATE m365_graphql_orchestrator\.env
+```
+
+Edit `m365_graphql_orchestrator/.env` with the key setting:
+
+```env
+USE_ANONYMOUS_MODE=True
+
+# Azure OpenAI
+AOAI_ENDPOINT=https://<your-aoai>.openai.azure.com/
+AOAI_KEY=<your-api-key>
+AZURE_OPENAI_DEPLOYMENT_NAME=<your-deployment>
+
+# Fabric GraphQL API endpoints
+FABRIC_SALES_GRAPHQL_URL=https://...
+FABRIC_CUSTOMER_GRAPHQL_URL=https://...
+FABRIC_PRODUCT_GRAPHQL_URL=https://...
+```
+
+> Bot registration settings (`CLIENTID`, `CLIENTSECRET`, `TENANTID`) are not needed in anonymous mode.
+
+### Run
+
+```powershell
+az login
+cd m365_graphql_orchestrator
+python -m src.main
+```
+
+Server starts at `http://localhost:8000/api/messages`.
+
+### Connect the Emulator
+
+1. Open **Bot Framework Emulator**
+2. Click **Open Bot**
+3. Bot URL: `http://localhost:8000/api/messages`
+4. Leave **Microsoft App ID** and **Password** blank
+5. Click **Connect**
+
+### What Anonymous Mode Does
+
+| Component | Normal (Teams) | Anonymous (Emulator) |
+|-----------|---------------|---------------------|
+| Auth middleware | JWT validation | Fake claims — no validation |
+| Connection manager | MSAL authentication | Skipped |
+| Fabric token | SSO → OBO via user's identity | `DefaultAzureCredential` via `az login` |
+
+The agent logic, MAF orchestration, and GraphQL queries are identical in both modes.
+
+### When to Use
+
+- Testing the full bot pipeline (activity handlers, invoke handlers)
+- Debugging M365 Agents SDK behaviour
+- When tenant restrictions prevent Teams app sideloading
+- Verifying the `on_message` and `on_invoke` handlers
+
+---
+
+## Option 4: Dev Tunnel (Teams with Local Code)
+
+To test the M365 bot **in Teams** while running code locally:
+
+```powershell
+# 1. Create a dev tunnel
+devtunnel create --allow-anonymous
+devtunnel port create -p 8000
+devtunnel host
+
+# 2. Copy the tunnel URL (e.g. https://abc123.devtunnels.ms)
+
+# 3. Set as the bot messaging endpoint
+az bot update `
+  --resource-group <your-rg> `
+  --name <your-bot-name> `
+  --endpoint "https://<tunnel-url>/api/messages"
+
+# 4. Run the bot locally (NOT anonymous mode)
+cd m365_graphql_orchestrator
+# Ensure USE_ANONYMOUS_MODE=False in .env
+python -m src.main
+```
+
+Now test in Teams — messages route through the dev tunnel to your local code.
+
+> Remember to set `USE_ANONYMOUS_MODE=False` and provide the full bot registration settings in `.env`.
+
+---
+
+## Comparison
+
+| | DevUI | Custom UX | Bot Emulator | Dev Tunnel |
+|---|---|---|---|---|
+| **What it tests** | Agent + MAF + GraphQL | Agent + FastAPI + Mem0 + UI | Full bot pipeline | Full bot + Teams |
+| **Auth** | `az login` | `az login` | `az login` (anon mode) | Teams SSO → OBO |
+| **Fabric token** | Developer identity | Developer identity | Developer identity | User identity |
+| **Setup** | Minimal (Python only) | Python + Node.js | Emulator install | Dev tunnel + Bot reg |
+| **Memory** | No | Yes (Mem0) | No | No |
+| **SSO testing** | No | No | No | Yes |
+| **Best for** | Quick agent testing | UI dev, production demo | Bot pipeline, handlers | End-to-end Teams |
+
+> **Note:** Only the dev tunnel option tests the Teams SSO/OBO authentication flow. To test SSO, you must have the bot registered in Azure and sideloaded to Teams.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `DefaultAzureCredential` fails | Not signed in | Run `az login` |
+| Fabric returns 401/403 | Identity lacks workspace access | Verify Fabric permissions |
+| `ModuleNotFoundError` | Missing dependencies | `pip install -r requirements.txt` in the correct folder |
+| Emulator can't connect | Bot server not running | Verify `python -m src.main` is running |
+| Emulator returns 500 | Server error | Check terminal output for stack trace |
+| Dev tunnel connection reset | Tunnel not hosting | Ensure `devtunnel host` is running |
+| DevUI shows no agent | Wrong working directory | Run from repo root: `python graphql_agents\run.py` |
+# Local Testing Guide
+
+Two ways to test the GraphQL Agents Orchestrator locally before deploying to Azure:
+
+1. **Custom UX** — React + FastAPI chat app (fastest for iterating on agent behavior)
+2. **Bot Framework Emulator** — tests the full M365 Agents SDK bot pipeline
+
+Both use `DefaultAzureCredential` (`az login`) for Fabric authentication.
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|-------------|---------|
+| Python 3.11+ | Required runtime |
+| Node.js 18+ | Custom UX frontend only |
+| Azure CLI | Authenticated via `az login` with Fabric workspace access |
+| Azure OpenAI | API key + deployment name |
+| Fabric workspace | With GraphQL API endpoints |
+
+---
+
+## Option 1: Custom UX (Recommended for Agent Development)
+
+The Custom UX (`graphql_agents/`) provides a full chat interface with streaming responses and Mem0 memory.
+
+### Setup
+
+```powershell
+# From the repo root
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+pip install -r graphql_agents\backend\requirements.txt
+cd graphql_agents\frontend
+npm install
+cd ..\..
+```
+
+### Configure
+
+```powershell
+Copy-Item graphql_agents\.env.template graphql_agents\.env
+# Edit graphql_agents/.env with your Azure OpenAI and Fabric details
+```
+
+### Run
+
+```powershell
+az login
+cd graphql_agents
+.\start_ui.ps1
+```
+
+Open `http://localhost:5173`.
+
+### When to Use
+
+- Iterating on orchestrator or sub-agent prompts
+- Testing GraphQL query generation and results
+- Developing the frontend UI
+- Quick demos with persistent memory
+
+---
+
+## Option 2: Bot Framework Emulator
+
+The Emulator tests the full M365 Agents SDK pipeline — activity routing, SSO handler stubs, and MAF orchestration — using anonymous auth locally.
+
+### Install the Emulator
+
+Download from: https://github.com/microsoft/BotFramework-Emulator/releases
+
+### Setup
+
+```powershell
+# From the repo root (reuse the same venv)
+pip install -r m365_graphql_orchestrator\requirements.txt
+```
+
+### Configure
+
+```powershell
+Copy-Item m365_graphql_orchestrator\env.TEMPLATE m365_graphql_orchestrator\.env
+```
+
+Edit `m365_graphql_orchestrator/.env` with the key setting:
+
+```env
+USE_ANONYMOUS_MODE=True
+
+# Azure OpenAI
+AOAI_ENDPOINT=https://<your-aoai>.openai.azure.com/
+AOAI_KEY=<your-api-key>
+AZURE_OPENAI_DEPLOYMENT_NAME=<your-deployment>
+
+# Fabric GraphQL API endpoints
+FABRIC_SALES_GRAPHQL_URL=https://...
+FABRIC_CUSTOMER_GRAPHQL_URL=https://...
+FABRIC_PRODUCT_GRAPHQL_URL=https://...
+```
+
+> Bot registration settings (`CLIENTID`, `CLIENTSECRET`, `TENANTID`) are not needed in anonymous mode.
+
+### Run
+
+```powershell
+az login
+cd m365_graphql_orchestrator
+python -m src.main
+```
+
+Server starts at `http://localhost:8000/api/messages`.
+
+### Connect the Emulator
+
+1. Open **Bot Framework Emulator**
+2. Click **Open Bot**
+3. Bot URL: `http://localhost:8000/api/messages`
+4. Leave **Microsoft App ID** and **Password** blank
+5. Click **Connect**
+
+### What Anonymous Mode Does
+
+| Component | Normal (Teams) | Anonymous (Emulator) |
+|-----------|---------------|---------------------|
+| Auth middleware | JWT validation | Fake claims — no validation |
+| Connection manager | MSAL authentication | Skipped |
+| Fabric token | SSO → OBO via user's identity | `DefaultAzureCredential` via `az login` |
+
+The agent logic, MAF orchestration, and GraphQL queries are identical in both modes.
+
+### When to Use
+
+- Testing the full bot pipeline (activity handlers, invoke handlers)
+- Debugging M365 Agents SDK behavior
+- When tenant restrictions prevent Teams app sideloading
+- Verifying the `on_message` and `on_invoke` handlers
+
+---
+
+## Option 3: Dev Tunnel (Teams with Local Code)
+
+To test the M365 bot **in Teams** while running code locally:
+
+```powershell
+# 1. Create a dev tunnel
+devtunnel create --allow-anonymous
+devtunnel port create -p 8000
+devtunnel host
+
+# 2. Copy the tunnel URL (e.g. https://abc123.devtunnels.ms)
+
+# 3. Set as the bot messaging endpoint
+az bot update `
+  --resource-group <your-rg> `
+  --name <your-bot-name> `
+  --endpoint "https://<tunnel-url>/api/messages"
+
+# 4. Run the bot locally (NOT anonymous mode)
+cd m365_graphql_orchestrator
+# Ensure USE_ANONYMOUS_MODE=False in .env
+python -m src.main
+```
+
+Now test in Teams — messages route through the dev tunnel to your local code.
+
+> Remember to set `USE_ANONYMOUS_MODE=False` and provide the full bot registration settings in `.env`.
+
+---
+
+## Comparison
+
+| | Custom UX | Bot Emulator | Dev Tunnel |
+|---|---|---|---|
+| **What it tests** | Agent + FastAPI + UI | Full bot pipeline | Full bot + Teams |
+| **Auth** | `az login` | `az login` (anon mode) | Teams SSO → OBO |
+| **Fabric token** | Developer identity | Developer identity | User identity |
+| **Setup** | Minimal | Emulator install | Dev tunnel + Bot registration |
+| **SSO testing** | No | No | Yes |
+| **Best for** | Agent prompts, queries, UI | Bot pipeline, handlers | End-to-end Teams testing |
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `DefaultAzureCredential` fails | Not signed in | Run `az login` |
+| Fabric returns 401/403 | Identity lacks workspace access | Verify Fabric permissions |
+| `ModuleNotFoundError` | Missing dependencies | `pip install -r requirements.txt` in the correct folder |
+| Emulator can't connect | Bot server not running | Verify `python -m src.main` is running |
+| Emulator returns 500 | Server error | Check terminal output for stack trace |
+| Dev tunnel connection reset | Tunnel not hosting | Ensure `devtunnel host` is running |
+# Local Testing Guide
+
 This guide covers two ways to test the Fabric Agents Orchestrator locally before deploying to Azure:
 
 1. **DevUI** — browser-based chat UI (fastest for iterating on agent behavior)

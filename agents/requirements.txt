@@ -1,4 +1,0 @@
-agent-framework-azure-ai
-agent-framework-devui
-python-dotenv
-azure-identity

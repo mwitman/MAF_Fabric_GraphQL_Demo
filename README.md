@@ -1,3 +1,230 @@
+# Fabric GraphQL Agents — Microsoft Agent Framework Demo
+
+An orchestrator agent built with the **Microsoft Agent Framework (MAF)** that delegates to three sub-agents — **Sales**, **Customer**, and **Product** — each querying Microsoft Fabric GraphQL APIs. Two deployment options ship from the same codebase:
+
+| Interface | Folder | Purpose |
+|-----------|--------|---------|
+| **Custom UX** | `graphql_agents/` | React + FastAPI chat app with Mem0 memory, containerised for Azure Container Apps |
+| **M365 Channels** | `m365_graphql_orchestrator/` | Azure Bot Service bot for Teams, Outlook, and M365 Copilot |
+
+Both share the same multi-agent architecture: one orchestrator agent that routes questions to domain-specific sub-agents via agent-as-tool delegation.
+
+---
+
+## Architecture
+
+```
+                 ┌──────────────────────────────────────────────────┐
+                 │              User Interfaces                     │
+                 │                                                  │
+                 │  ┌──────────────────┐  ┌──────────────────────┐ │
+                 │  │   Custom UX      │  │   M365 Channels      │ │
+                 │  │  React + FastAPI  │  │  Teams / Outlook /   │ │
+                 │  │   (graphql_      │  │  M365 Copilot        │ │
+                 │  │    agents/)      │  │  (m365_graphql_      │ │
+                 │  │                  │  │   orchestrator/)     │ │
+                 │  └────────┬─────────┘  └──────────┬───────────┘ │
+                 └───────────┼───────────────────────┼─────────────┘
+                             │                       │
+                             ▼                       ▼
+                 ┌──────────────────────────────────────────────────┐
+                 │        Orchestrator Agent (ChatAgent)            │
+                 │  ┌──────────┐ ┌────────────┐ ┌───────────────┐  │
+                 │  │  Sales   │ │  Customer  │ │   Product     │  │
+                 │  │  Agent   │ │   Agent    │ │    Agent      │  │
+                 │  │ (tool)   │ │  (tool)    │ │   (tool)      │  │
+                 │  └────┬─────┘ └─────┬──────┘ └──────┬────────┘  │
+                 └───────┼─────────────┼───────────────┼───────────┘
+                         │             │               │
+                         ▼             ▼               ▼
+               ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+               │ Sales GraphQL│ │ Customer     │ │ Product      │
+               │  (Fabric)    │ │  GraphQL     │ │  GraphQL     │
+               └──────────────┘ └──────────────┘ └──────────────┘
+```
+
+---
+
+## Prerequisites
+
+| Requirement | Details |
+|-------------|---------|
+| **Python 3.11+** | Required runtime |
+| **Node.js 18+** | For the Custom UX frontend (Vite + React) |
+| **Azure CLI** | Authenticated via `az login` for local development |
+| **Azure OpenAI resource** | Deployment supporting the Responses API (e.g. `gpt-4o`, `gpt-5`) |
+| **Microsoft Fabric workspace** | With a GraphQL API exposing Sales, Customer, and Product tables |
+
+---
+
+## Quick Start — Custom UX
+
+The Custom UX is a React + Tailwind frontend backed by a FastAPI server with Mem0 persistent memory.
+
+```powershell
+# 1. Create and activate a virtual environment
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+
+# 2. Install backend dependencies
+pip install -r graphql_agents\backend\requirements.txt
+
+# 3. Configure environment
+Copy-Item graphql_agents\.env.template graphql_agents\.env
+# Edit graphql_agents/.env with your Azure OpenAI and Fabric GraphQL details
+
+# 4. Sign in to Azure (for Fabric token)
+az login
+
+# 5. Start the backend + frontend
+cd graphql_agents
+.\start_ui.ps1
+```
+
+The backend runs at `http://localhost:8080` and the frontend at `http://localhost:5173`.
+
+See the full guide: **[Custom UX Setup](docs/custom-ux-setup.md)**
+
+---
+
+## Quick Start — M365 Channels (Teams / Copilot)
+
+The M365 version deploys as an Azure Bot Service bot, using the M365 Agents SDK.
+
+```powershell
+# 1. Install dependencies (same venv as above)
+pip install -r m365_graphql_orchestrator\requirements.txt
+
+# 2. Configure environment
+Copy-Item m365_graphql_orchestrator\env.TEMPLATE m365_graphql_orchestrator\.env
+# Edit .env with Bot registration, Azure OpenAI, and Fabric details
+
+# 3. Run locally (anonymous mode for testing)
+cd m365_graphql_orchestrator
+python -m src.main
+```
+
+Connects to the Bot Framework Emulator at `http://localhost:8000/api/messages`.
+
+See the full guides:
+- **[M365 Deployment Guide](docs/m365-deployment-guide.md)** — step-by-step Azure deployment
+- **[Local Testing Guide](docs/local-testing-guide.md)** — Bot Framework Emulator + dev tunnel
+
+---
+
+## Project Structure
+
+```
+graphql_agents/                          # Custom UX (React + FastAPI + Mem0)
+├── .env.template                        # Template for required env vars
+├── Dockerfile                           # Multi-stage build for Container Apps
+├── push_to_acr.ps1                      # Build & push Docker image to ACR
+├── run.py                               # Python launcher
+├── start_ui.ps1                         # PowerShell launcher (backend + frontend)
+├── backend/
+│   ├── server.py                        # FastAPI backend with SSE streaming + Mem0
+│   ├── memory.py                        # Mem0 configuration (Azure OpenAI + Qdrant)
+│   ├── requirements.txt                 # Python dependencies
+│   └── static/                          # Built frontend assets (served by FastAPI)
+├── frontend/
+│   ├── src/                             # React + Tailwind + Vite source
+│   ├── package.json
+│   └── vite.config.ts
+└── orchestrator_agent/
+    ├── agent.py                         # Orchestrator + sub-agent wiring
+    ├── graphql_client.py                # Async Fabric GraphQL client
+    ├── prompts/                         # System prompts per agent
+    └── subagents/                       # Sales, Customer, Product sub-agents
+
+m365_graphql_orchestrator/               # M365 Channels (Teams / Outlook / Copilot)
+├── env.TEMPLATE                         # Template for required env vars
+├── DEPLOYMENT.md                        # Full deployment walkthrough
+├── requirements.txt                     # Python dependencies
+├── startup.sh                           # App Service startup command
+├── appPackage/
+│   └── manifest.json                    # Teams app manifest
+├── prompts/                             # System prompts per agent
+└── src/
+    ├── main.py                          # Entrypoint
+    ├── agent.py                         # Bot logic — M365 SDK + MAF + SSO/OBO
+    ├── graphql_client.py                # Async Fabric GraphQL client
+    ├── subagents.py                     # Sub-agent factories
+    └── start_server.py                  # aiohttp server bootstrap
+
+docs/                                    # Documentation
+├── custom-ux-setup.md                   # Custom UX local dev + Docker guide
+├── m365-deployment-guide.md             # Full M365 deployment to Azure
+└── local-testing-guide.md               # Bot Emulator + dev tunnel testing
+```
+
+---
+
+## How It Works
+
+### Multi-Agent Architecture
+
+Each sub-agent is a `ChatAgent` with:
+- A domain-specific system prompt (with full GraphQL schema documentation)
+- An `@ai_function` tool that executes GraphQL queries against Fabric
+
+The orchestrator sees each sub-agent as a tool (via `as_tool()`) and routes user questions to the appropriate domain.
+
+### Authentication
+
+| Interface | Auth Method | Fabric Token Source |
+|-----------|-------------|---------------------|
+| **Custom UX** | `DefaultAzureCredential` (`az login`) | Developer's own identity |
+| **M365** | Bot Service SSO → OBO token exchange | Signed-in user's identity (delegated) |
+
+### Mem0 Memory (Custom UX only)
+
+The Custom UX includes [Mem0](https://github.com/mem0ai/mem0) for persistent cross-conversation memory. The agent remembers facts from previous sessions and incorporates them into future responses.
+
+---
+
+## SDK Versions
+
+| Package | Version | Notes |
+|---------|---------|-------|
+| `agent-framework-core` | `1.0.0b251007` | MAF core runtime |
+| `agent-framework-azure-ai` | `1.0.0b251007` | MAF Azure AI integration |
+| `openai` | `2.8.1` | Pinned — URL construction varies across versions |
+| `microsoft-agents-hosting-aiohttp` | `0.8.0` | M365 Agents SDK (M365 path only) |
+| `microsoft-agents-authentication-msal` | `0.8.0` | M365 Agents SDK (M365 path only) |
+
+> **Do not set** `AZURE_OPENAI_API_VERSION`. The MAF SDK default (`"preview"`) is correct.
+
+---
+
+## Data Domain
+
+| Agent | Data Domain | Key Tables |
+|-------|-------------|------------|
+| **Sales Agent** | Orders, order status, totals, line items | SalesOrderHeader, SalesOrderDetail |
+| **Customer Agent** | Customer identity, addresses | Customer, CustomerAddress, Address |
+| **Product Agent** | Products, categories, models, descriptions | Product, ProductCategory, ProductModel |
+
+GraphQL endpoint pattern:
+```
+https://api.fabric.microsoft.com/v1/workspaces/<workspace-id>/graphqlapis/<api-id>/graphql
+```
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Custom UX Setup](docs/custom-ux-setup.md) | Local dev, Docker build, ACR push |
+| [M365 Deployment Guide](docs/m365-deployment-guide.md) | Full Azure deployment to Teams/Copilot |
+| [Local Testing Guide](docs/local-testing-guide.md) | Bot Framework Emulator + dev tunnel |
+| [M365 Orchestrator DEPLOYMENT.md](m365_graphql_orchestrator/DEPLOYMENT.md) | Quick-reference deployment steps |
+
+---
+
+## License
+
+See [LICENSE](LICENSE).
 # Orchestrating Fabric Data Agents
 
 An orchestrator agent built with the **Microsoft Agent Framework (MAF)** that queries three Microsoft Fabric data agents — **Sales**, **Customer**, and **Product** — via hosted MCP endpoints. The Azure OpenAI Responses API executes MCP tools server-side, so no local MCP server is needed.

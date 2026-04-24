@@ -1,0 +1,15 @@
+__pycache__
+*.pyc
+.env
+.venv
+venv
+node_modules
+frontend/node_modules
+backend/static
+*.egg-info
+.git
+.gitignore
+*.md
+run.py
+_*.py
+_*.ps1

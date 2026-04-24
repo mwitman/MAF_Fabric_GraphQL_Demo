@@ -1,0 +1,10 @@
+# Microsoft Agent Framework (known compatible set)
+agent-framework-azure-ai==1.0.0b251007
+agent-framework-core==1.0.0b251007
+agent-framework-devui==1.0.0b251007
+openai==2.8.1
+
+# Runtime dependencies
+python-dotenv
+azure-identity>=1.19.0
+aiohttp

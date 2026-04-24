@@ -1,0 +1,15 @@
+# M365 Agents SDK — pinned to 0.8.0
+python-dotenv
+aiohttp==3.11.11
+microsoft-agents-hosting-aiohttp==0.8.0
+microsoft-agents-hosting-core==0.8.0
+microsoft-agents-authentication-msal==0.8.0
+microsoft-agents-activity==0.8.0
+
+# Microsoft Agent Framework (MAF) — ChatAgent + @ai_function API
+agent-framework-azure-ai==1.0.0b251007
+agent-framework-core==1.0.0b251007
+openai==2.8.1
+
+# Fabric authentication
+azure-identity>=1.19.0
