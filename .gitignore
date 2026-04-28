@@ -7,6 +7,9 @@ _mcp_ref/
 graphql_agents/.env
 m365_graphql_orchestrator/.env
 
+# Manifest with real bot IDs (template version is safe to commit)
+m365_graphql_orchestrator/appPackage/manifest.json
+
 # Deployment / build artifacts
 *.zip
 graphql_agents/backend/requirements-frozen.txt

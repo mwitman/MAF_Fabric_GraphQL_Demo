@@ -89,32 +89,51 @@ az bot msteams create --resource-group <your-rg> --name <your-bot-name>
 
 ---
 
-## 3. Deploy to Azure App Service
+## 3. Deploy to Azure Container Apps
 
-### Create the App Service
+### Prerequisites
+
+- **Azure Container Registry (ACR)** — to host the Docker image
+- **Docker** installed locally
+
+### Build & Push the Container Image
 
 ```powershell
-az appservice plan create `
-  --name <your-plan-name> `
-  --resource-group <your-rg> `
-  --sku B1 `
-  --is-linux
-
-az webapp create `
-  --name <your-app-name> `
-  --resource-group <your-rg> `
-  --plan <your-plan-name> `
-  --runtime "PYTHON:3.12"
+cd m365_graphql_orchestrator
+.\push_to_acr.ps1 -AcrName <your-acr-name>
 ```
 
-### Configure App Settings
+Or manually:
+```powershell
+az acr login --name <your-acr>
+docker build -t <your-acr>.azurecr.io/m365-graphql-orchestrator:latest .
+docker push <your-acr>.azurecr.io/m365-graphql-orchestrator:latest
+```
+
+### Create the Container Apps Environment (if needed)
 
 ```powershell
-az webapp config appsettings set `
-  --name <your-app-name> `
+az containerapp env create `
+  --name <your-env-name> `
   --resource-group <your-rg> `
-  --settings `
-    SCM_DO_BUILD_DURING_DEPLOYMENT=true `
+  --location <your-region>
+```
+
+### Create the Container App
+
+```powershell
+az containerapp create `
+  --name <your-container-app> `
+  --resource-group <your-rg> `
+  --environment <your-env-name> `
+  --image <your-acr>.azurecr.io/m365-graphql-orchestrator:latest `
+  --registry-server <your-acr>.azurecr.io `
+  --registry-username <acr-admin-user> `
+  --registry-password <acr-admin-password> `
+  --target-port 8000 `
+  --ingress external `
+  --min-replicas 1 `
+  --env-vars `
     USE_ANONYMOUS_MODE=False `
     CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID=<your-client-id> `
     CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET=<your-client-secret> `
@@ -128,20 +147,31 @@ az webapp config appsettings set `
     FABRIC_PRODUCT_GRAPHQL_URL=<your-fabric-graphql-url>
 ```
 
-### Set Startup Command
+### (Recommended) Enable Managed Identity for Fabric Access
 
 ```powershell
-az webapp config set `
-  --name <your-app-name> `
+# Enable system-assigned managed identity
+az containerapp identity assign `
+  --name <your-container-app> `
   --resource-group <your-rg> `
-  --startup-file "python -m src.main"
+  --system-assigned
+
+# Get the principal ID
+az containerapp show `
+  --name <your-container-app> `
+  --resource-group <your-rg> `
+  --query "identity.principalId" -o tsv
 ```
 
-### Deploy the Code
+Then add this identity to the **Fabric workspace** with Viewer (or higher) access.
+
+### Get the Container App FQDN
 
 ```powershell
-cd m365_graphql_orchestrator
-az webapp up --name <your-app-name> --resource-group <your-rg>
+az containerapp show `
+  --name <your-container-app> `
+  --resource-group <your-rg> `
+  --query "properties.configuration.ingress.fqdn" -o tsv
 ```
 
 ---
@@ -152,7 +182,7 @@ az webapp up --name <your-app-name> --resource-group <your-rg>
 az bot update `
   --resource-group <your-rg> `
   --name <your-bot-name> `
-  --endpoint "https://<your-app-name>.azurewebsites.net/api/messages"
+  --endpoint "https://<your-container-app-fqdn>/api/messages"
 ```
 
 ---
@@ -162,10 +192,10 @@ az bot update `
 Edit `appPackage/manifest.json`:
 
 1. Replace all `00000000-0000-0000-0000-000000000000` with your **bot Client ID**
-2. Update `validDomains` with your App Service domain:
+2. Update `validDomains` with your Container App FQDN:
    ```json
    "validDomains": [
-     "<your-app-name>.azurewebsites.net",
+     "<your-container-app-fqdn>",
      "token.botframework.com",
      "login.microsoftonline.com",
      "login.windows.net"
@@ -204,6 +234,22 @@ Once the app is sideloaded:
 - **M365 Copilot**: Type `@GraphQL Agents Orchestrator` followed by your question
 
 > **Note**: M365 Copilot requires a Copilot license. The tenant admin may need to approve the app in **Teams Admin Center → Manage apps**.
+
+---
+
+## Updating the Deployment
+
+After code changes, rebuild and push the new image, then update the container:
+
+```powershell
+cd m365_graphql_orchestrator
+.\push_to_acr.ps1 -AcrName <your-acr-name> -Tag v2
+
+az containerapp update `
+  --name <your-container-app> `
+  --resource-group <your-rg> `
+  --image <your-acr>.azurecr.io/m365-graphql-orchestrator:v2
+```
 
 ---
 
