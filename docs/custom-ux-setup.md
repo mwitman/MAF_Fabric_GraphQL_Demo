@@ -64,6 +64,14 @@ AZURE_OPENAI_DEPLOYMENT_NAME=<your-deployment>
 FABRIC_SALES_GRAPHQL_URL=https://api.fabric.microsoft.com/v1/workspaces/<workspace-id>/graphqlapis/<api-id>/graphql
 FABRIC_CUSTOMER_GRAPHQL_URL=https://...
 FABRIC_PRODUCT_GRAPHQL_URL=https://...
+
+# Azure AI Search (Mem0 vector store)
+AZURE_AI_SEARCH_SERVICE_NAME=<your-search-service>
+AZURE_AI_SEARCH_API_KEY=<your-search-admin-key>
+
+# Azure OpenAI Embedding (Mem0 embedder)
+AOAI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small
+AOAI_EMBEDDING_API_VERSION=2024-06-01
 ```
 
 > **Do not set** `AZURE_OPENAI_API_VERSION` — the MAF SDK default (`"preview"`) is correct.
@@ -125,13 +133,27 @@ The orchestrator routes to the appropriate sub-agent, which executes a GraphQL q
 
 The Custom UX uses [Mem0](https://github.com/mem0ai/mem0) to maintain cross-conversation memory. Configuration is in `backend/memory.py`:
 
-- **LLM**: Azure OpenAI (same deployment as the agent)
-- **Embedder**: Azure OpenAI `text-embedding-3-small`
-- **Vector store**: Qdrant (in-memory for local dev; swap to a hosted instance for production)
+- **LLM**: Azure OpenAI (same deployment as the agent, e.g. `gpt-5.4`)
+- **Embedder**: Azure OpenAI `text-embedding-3-small` (1536 dimensions)
+- **Vector store**: Azure AI Search (index: `fabric_agent_memories`)
 
 Memory is stored per user. Before each message, the backend searches for relevant memories and injects them as context. After each response, new facts are extracted and persisted.
 
-> **Note**: With the default in-memory Qdrant, memories are lost when the server restarts. For persistent storage, configure Qdrant with a volume or use the hosted Qdrant Cloud option.
+### Required Environment Variables for Mem0
+
+Add these to `graphql_agents/.env`:
+
+```env
+# Azure AI Search (Mem0 vector store)
+AZURE_AI_SEARCH_SERVICE_NAME=<your-search-service>
+AZURE_AI_SEARCH_API_KEY=<your-search-admin-key>
+
+# Azure OpenAI Embedding (Mem0 embedder)
+AOAI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small
+AOAI_EMBEDDING_API_VERSION=2024-06-01
+```
+
+> **Note**: The Mem0 LLM reuses `AOAI_ENDPOINT`, `AOAI_KEY`, and `AZURE_OPENAI_DEPLOYMENT_NAME` from the main agent config. The `mem0ai` package must be pinned to version `2.0.0` to avoid a `max_tokens` incompatibility with gpt-5 series models.
 
 ---
 
@@ -173,7 +195,9 @@ az containerapp create `
   --target-port 8080 `
   --ingress external `
   --env-vars AOAI_ENDPOINT=... AOAI_KEY=... AZURE_OPENAI_DEPLOYMENT_NAME=... `
-             FABRIC_SALES_GRAPHQL_URL=... FABRIC_CUSTOMER_GRAPHQL_URL=... FABRIC_PRODUCT_GRAPHQL_URL=...
+             FABRIC_SALES_GRAPHQL_URL=... FABRIC_CUSTOMER_GRAPHQL_URL=... FABRIC_PRODUCT_GRAPHQL_URL=... `
+             AZURE_AI_SEARCH_SERVICE_NAME=... AZURE_AI_SEARCH_API_KEY=... `
+             AOAI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small AOAI_EMBEDDING_API_VERSION=2024-06-01
 ```
 
 ---

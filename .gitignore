@@ -10,6 +10,9 @@ m365_graphql_orchestrator/.env
 # Manifest with real bot IDs (template version is safe to commit)
 m365_graphql_orchestrator/appPackage/manifest.json
 
+# Deployment commands (contains secrets)
+Deployment_Commands.md
+
 # Deployment / build artifacts
 *.zip
 graphql_agents/backend/requirements-frozen.txt

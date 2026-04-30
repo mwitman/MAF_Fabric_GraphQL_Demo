@@ -4,10 +4,10 @@ An orchestrator agent built with the **Microsoft Agent Framework (MAF)** that de
 
 | Interface | Folder | Purpose |
 |-----------|--------|---------|
-| **Custom UX** | `graphql_agents/` | React + FastAPI chat app with Mem0 memory, containerised for Azure Container Apps |
-| **M365 Channels** | `m365_graphql_orchestrator/` | Azure Bot Service bot for Teams, Outlook, and M365 Copilot |
+| **Custom UX** | `graphql_agents/` | React + FastAPI chat app with Mem0 memory (Azure AI Search), containerised for Azure Container Apps |
+| **M365 Channels** | `m365_graphql_orchestrator/` | Azure Bot Service bot for Teams, Outlook, and M365 Copilot with Mem0 memory (Azure AI Search), containerised for Azure Container Apps |
 
-Both share the same multi-agent architecture: one orchestrator agent that routes questions to domain-specific sub-agents via agent-as-tool delegation.
+Both share the same multi-agent architecture: one orchestrator agent that routes questions to domain-specific sub-agents via agent-as-tool delegation. Both also share a persistent memory layer powered by **Mem0** with **Azure AI Search** as the vector store.
 
 ---
 
@@ -52,8 +52,9 @@ Both share the same multi-agent architecture: one orchestrator agent that routes
 | **Python 3.11+** | Required runtime |
 | **Node.js 18+** | For the Custom UX frontend (Vite + React) |
 | **Azure CLI** | Authenticated via `az login` for local development |
-| **Azure OpenAI resource** | Deployment supporting the Responses API (e.g. `gpt-4o`, `gpt-5`) |
+| **Azure OpenAI resource** | Deployment supporting the Responses API (e.g. `gpt-5.4`) |
 | **Microsoft Fabric workspace** | With a GraphQL API exposing Sales, Customer, and Product tables |
+| **Azure AI Search** | For Mem0 persistent memory vector store |
 
 ---
 
@@ -123,7 +124,7 @@ graphql_agents/                          # Custom UX (React + FastAPI + Mem0)
 ├── start_ui.ps1                         # PowerShell launcher (backend + frontend)
 ├── backend/
 │   ├── server.py                        # FastAPI backend with SSE streaming + Mem0
-│   ├── memory.py                        # Mem0 configuration (Azure OpenAI + Qdrant)
+│   ├── memory.py                        # Mem0 config (Azure OpenAI + Azure AI Search)
 │   ├── requirements.txt                 # Python dependencies
 │   └── static/                          # Built frontend assets (served by FastAPI)
 ├── frontend/
@@ -137,8 +138,11 @@ graphql_agents/                          # Custom UX (React + FastAPI + Mem0)
     └── subagents/                       # Sales, Customer, Product sub-agents
 
 m365_graphql_orchestrator/               # M365 Channels (Teams / Outlook / Copilot)
+├── .dockerignore                        # Docker build exclusions
+├── .env (from env.TEMPLATE)             # Local env vars (not committed)
 ├── env.TEMPLATE                         # Template for required env vars
-├── DEPLOYMENT.md                        # Full deployment walkthrough
+├── Dockerfile                           # Container image (Python 3.12-slim)
+├── push_to_acr.ps1                      # Build & push Docker image to ACR
 ├── requirements.txt                     # Python dependencies
 ├── startup.sh                           # App Service startup command
 ├── appPackage/
@@ -146,7 +150,8 @@ m365_graphql_orchestrator/               # M365 Channels (Teams / Outlook / Copi
 ├── prompts/                             # System prompts per agent
 └── src/
     ├── main.py                          # Entrypoint
-    ├── agent.py                         # Bot logic — M365 SDK + MAF + SSO/OBO
+    ├── agent.py                         # Bot logic — M365 SDK + MAF + SSO/OBO + Mem0
+    ├── memory.py                        # Mem0 config (Azure OpenAI + Azure AI Search)
     ├── graphql_client.py                # Async Fabric GraphQL client
     ├── subagents.py                     # Sub-agent factories
     └── start_server.py                  # aiohttp server bootstrap

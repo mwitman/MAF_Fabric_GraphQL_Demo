@@ -33,6 +33,7 @@ from agent_framework._types import TextContent
 from agent_framework._threads import AgentThread
 
 from .subagents import create_sales_agent, create_customer_agent, create_product_agent
+from .memory import create_memory
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -456,6 +457,16 @@ def _build_orchestrator(*, user_token: str | None = None) -> ChatAgent:
 # ---------------------------------------------------------------------------
 _threads: dict[str, AgentThread] = {}
 
+# ---------------------------------------------------------------------------
+# Mem0 memory layer — long-term context across sessions
+# ---------------------------------------------------------------------------
+try:
+    memory = create_memory()
+    logger.info("Mem0 memory layer initialised (Azure AI Search)")
+except Exception as _e:
+    logger.warning("Mem0 unavailable — running without memory: %s", _e)
+    memory = None
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Core message handler
@@ -466,7 +477,7 @@ async def _run_agent_pipeline(
     user_text: str,
     conversation_id: str,
 ) -> None:
-    """Acquire token → build orchestrator → run → send response."""
+    """Acquire token → build orchestrator → run → stream response to client."""
 
     user_token: str | None = None
 
@@ -488,24 +499,58 @@ async def _run_agent_pipeline(
         _threads[conversation_id] = AgentThread()
     thread = _threads[conversation_id]
 
+    # --- Mem0: retrieve relevant memories and prepend as context ---
+    user_id = _get_user_id(context) or "default_user"
+    enriched_message = user_text
+    if memory:
+        try:
+            results = memory.search(query=user_text, filters={"user_id": user_id}, limit=5)
+            memories_list = results.get("results", []) if isinstance(results, dict) else results
+            if memories_list:
+                mem_lines = "\n".join(f"- {m['memory']}" for m in memories_list)
+                enriched_message = (
+                    f"[Relevant context from previous conversations]\n{mem_lines}\n\n"
+                    f"{user_text}"
+                )
+                logger.info("Mem0: injected %d memories for user=%s", len(memories_list), user_id)
+        except Exception as exc:
+            logger.warning("Mem0 search failed: %s", exc)
+
     logger.info("Running orchestrator: conversation=%s", conversation_id)
 
-    # Stream the response and collect full text
+    # Stream the response to the client via M365 Agents SDK streaming
+    context.streaming_response._interval = 0.5  # reduce Teams default (1s) for snappier updates
+    context.streaming_response.set_generated_by_ai_label(True)
+    context.streaming_response.set_feedback_loop(True)
+    context.streaming_response.queue_informative_update("Querying Fabric data…")
+
     full_response: list[str] = []
-    async for update in orchestrator.run_stream(user_text, thread=thread):
-        for content in update.contents:
-            if isinstance(content, TextContent) and content.text:
-                full_response.append(content.text)
-
-    assistant_text = "".join(full_response).strip()
-    if not assistant_text:
-        assistant_text = (
-            "I wasn't able to generate a response. "
-            "Please try rephrasing your question."
+    try:
+        async for update in orchestrator.run_stream(enriched_message, thread=thread):
+            for content in update.contents:
+                if isinstance(content, TextContent) and content.text:
+                    full_response.append(content.text)
+                    context.streaming_response.queue_text_chunk(content.text)
+    except Exception as exc:
+        logger.error("Error during streaming: %s", exc, exc_info=True)
+        context.streaming_response.queue_text_chunk(
+            f"\n\n⚠️ An error occurred: {str(exc)[:300]}"
         )
+    finally:
+        await context.streaming_response.end_stream()
 
-    logger.info("Agent response length: %d chars", len(assistant_text))
-    await context.send_activity(assistant_text)
+    # --- Mem0: store the exchange for future recall ---
+    if memory and full_response:
+        try:
+            exchange = [
+                {"role": "user", "content": user_text},
+                {"role": "assistant", "content": "".join(full_response)},
+            ]
+            memory.add(exchange, user_id=user_id)
+        except Exception as exc:
+            logger.warning("Mem0 add failed: %s", exc)
+
+    logger.info("Streaming complete for conversation=%s", conversation_id)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -610,14 +655,45 @@ async def on_invoke(context: TurnContext, _state: TurnState) -> None:
     )
 
 
+import re  # noqa: E402 — needed for mention stripping
+
+
+def _strip_mentions(text: str) -> str:
+    """Remove Teams bot mention XML tags and collapse whitespace."""
+    cleaned = re.sub(r"<at[^>]*>.*?</at>", "", text, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 @AGENT_APP.activity("message")
 async def on_message(context: TurnContext, _state: TurnState):
     """Handle an incoming user message."""
-    user_text = (context.activity.text or "").strip()
+    raw_text = (context.activity.text or "").strip()
+    user_text = _strip_mentions(raw_text)
     conversation_id = (
         getattr(getattr(context.activity, "conversation", None), "id", None)
         or "default"
     )
+
+    logger.info("on_message: raw=%r  cleaned=%r", raw_text, user_text)
+
+    # Handle sign-out command — clears cached Fabric token
+    if user_text.lower() in ("signout", "sign out", "logout", "log out"):
+        user_token_client = _get_user_token_client(context)
+        user_id = _get_user_id(context)
+        if user_token_client and user_id:
+            try:
+                await user_token_client.user_token.sign_out(
+                    user_id=user_id,
+                    connection_name=OAUTH_CONNECTION_NAME,
+                    channel_id=_get_channel_id(context),
+                )
+                await context.send_activity("✅ Signed out. Send a new message to trigger re-authentication.")
+            except Exception as exc:
+                logger.warning("Sign-out failed: %s", exc)
+                await context.send_activity(f"⚠️ Sign-out error: {exc}")
+        else:
+            await context.send_activity("⚠️ Could not access token service for sign-out.")
+        return
 
     # Check if message is a magic code
     magic_code = _extract_magic_code(context.activity)

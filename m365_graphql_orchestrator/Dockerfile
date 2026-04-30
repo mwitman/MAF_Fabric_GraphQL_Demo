@@ -11,7 +11,8 @@ WORKDIR /app
 
 # Install Python deps
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir openai==2.8.1
 
 # Copy application code
 COPY src/ ./src/

@@ -218,11 +218,11 @@ Now test in Teams — messages route through the dev tunnel to your local code.
 
 | | DevUI | Custom UX | Bot Emulator | Dev Tunnel |
 |---|---|---|---|---|
-| **What it tests** | Agent + MAF + GraphQL | Agent + FastAPI + Mem0 + UI | Full bot pipeline | Full bot + Teams |
+| **What it tests** | Agent + MAF + GraphQL | Agent + FastAPI + Mem0 + UI | Full bot pipeline + Mem0 | Full bot + Teams + Mem0 |
 | **Auth** | `az login` | `az login` | `az login` (anon mode) | Teams SSO → OBO |
 | **Fabric token** | Developer identity | Developer identity | Developer identity | User identity |
 | **Setup** | Minimal (Python only) | Python + Node.js | Emulator install | Dev tunnel + Bot reg |
-| **Memory** | No | Yes (Mem0) | No | No |
+| **Memory** | No | Yes (Mem0 + Azure AI Search) | Yes (Mem0 + Azure AI Search) | Yes (Mem0 + Azure AI Search) |
 | **SSO testing** | No | No | No | Yes |
 | **Best for** | Quick agent testing | UI dev, production demo | Bot pipeline, handlers | End-to-end Teams |
 

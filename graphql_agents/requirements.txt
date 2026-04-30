@@ -8,3 +8,9 @@ openai==2.8.1
 python-dotenv
 azure-identity>=1.19.0
 aiohttp
+
+azure-search-documents==11.5.2
+
+# Mem0 memory with Azure AI Search
+mem0ai
+azure-search-documents>=11.4.0

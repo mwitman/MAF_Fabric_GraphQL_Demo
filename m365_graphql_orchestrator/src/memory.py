@@ -3,7 +3,7 @@
 Uses Azure OpenAI for both the LLM (memory extraction) and the embedder.
 Azure AI Search is used as the persistent vector store.
 
-Required env vars (loaded from graphql_agents/.env):
+Required env vars:
     AOAI_ENDPOINT                  — Azure OpenAI endpoint
     AOAI_KEY                       — Azure OpenAI API key
     AZURE_OPENAI_DEPLOYMENT_NAME   — LLM deployment (e.g. gpt-5.4)

@@ -71,7 +71,19 @@ class FabricGraphQLClient:
         logger.debug("GraphQL request to %s", endpoint_url)
         async with aiohttp.ClientSession() as session:
             async with session.post(endpoint_url, headers=headers, json=payload) as resp:
-                resp.raise_for_status()
+                if resp.status >= 400:
+                    error_body = await resp.text()
+                    logger.error(
+                        "GraphQL HTTP %d from %s — body: %s",
+                        resp.status, endpoint_url, error_body,
+                    )
+                    return {
+                        "errors": [{
+                            "message": f"Fabric returned HTTP {resp.status}",
+                            "status": resp.status,
+                            "detail": error_body,
+                        }]
+                    }
                 result = await resp.json()
 
         if "errors" in result:

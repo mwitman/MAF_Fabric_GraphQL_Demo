@@ -10,7 +10,7 @@ The deployment creates:
 
 1. **Entra ID app registration** — bot identity + Fabric OAuth
 2. **Azure Bot resource** — routes M365 channel messages
-3. **Azure App Service** — hosts the Python bot
+3. **Azure Container Apps** — hosts the containerised Python bot
 4. **Teams app package** — sideloaded to Teams/Copilot
 
 ---
@@ -93,32 +93,34 @@ az bot msteams create --resource-group <your-rg> --name <your-bot-name>
 
 ---
 
-## 3. Azure App Service
+## 3. Azure Container Apps
 
-### Create the App Service
+### Build and Push the Docker Image
 
 ```powershell
-az appservice plan create `
-  --name <your-plan-name> `
-  --resource-group <your-rg> `
-  --sku B1 `
-  --is-linux
-
-az webapp create `
-  --name <your-app-name> `
-  --resource-group <your-rg> `
-  --plan <your-plan-name> `
-  --runtime "PYTHON:3.12"
+cd m365_graphql_orchestrator
+docker build -t <your-acr>.azurecr.io/m365-graphql-orchestrator:latest .
+az acr login --name <your-acr>
+docker push <your-acr>.azurecr.io/m365-graphql-orchestrator:latest
 ```
 
-### Configure App Settings
+> **Note**: The Dockerfile installs `openai==2.8.1` separately to override the `agent-framework-core` constraint (`openai<2`). This is required for `mem0ai==2.0.0` compatibility with gpt-5 series models.
+
+### Create the Container App
 
 ```powershell
-az webapp config appsettings set `
+az containerapp create `
   --name <your-app-name> `
   --resource-group <your-rg> `
-  --settings `
-    SCM_DO_BUILD_DURING_DEPLOYMENT=true `
+  --environment <your-container-env> `
+  --image <your-acr>.azurecr.io/m365-graphql-orchestrator:latest `
+  --registry-server <your-acr>.azurecr.io `
+  --registry-username <your-acr> `
+  --registry-password <your-acr-password> `
+  --target-port 8000 `
+  --ingress external `
+  --min-replicas 1 `
+  --env-vars `
     USE_ANONYMOUS_MODE=False `
     CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID=<your-client-id> `
     CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET=<your-client-secret> `
@@ -129,23 +131,25 @@ az webapp config appsettings set `
     AZURE_OPENAI_DEPLOYMENT_NAME=<your-deployment-name> `
     FABRIC_SALES_GRAPHQL_URL=<your-fabric-graphql-url> `
     FABRIC_CUSTOMER_GRAPHQL_URL=<your-fabric-graphql-url> `
-    FABRIC_PRODUCT_GRAPHQL_URL=<your-fabric-graphql-url>
+    FABRIC_PRODUCT_GRAPHQL_URL=<your-fabric-graphql-url> `
+    AZURE_AI_SEARCH_SERVICE_NAME=<your-search-service> `
+    AZURE_AI_SEARCH_API_KEY=<your-search-admin-key> `
+    AOAI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small `
+    AOAI_EMBEDDING_API_VERSION=2024-06-01
 ```
 
-### Set Startup Command
+### Deploy a New Revision
+
+After code changes, rebuild, push, and update:
 
 ```powershell
-az webapp config set `
+docker build -t <your-acr>.azurecr.io/m365-graphql-orchestrator:latest .
+docker push <your-acr>.azurecr.io/m365-graphql-orchestrator:latest
+az containerapp update `
   --name <your-app-name> `
   --resource-group <your-rg> `
-  --startup-file "python -m src.main"
-```
-
-### Deploy the Code
-
-```powershell
-cd m365_graphql_orchestrator
-az webapp up --name <your-app-name> --resource-group <your-rg>
+  --image <your-acr>.azurecr.io/m365-graphql-orchestrator:latest `
+  --revision-suffix <revision-name>
 ```
 
 ---
@@ -156,8 +160,10 @@ az webapp up --name <your-app-name> --resource-group <your-rg>
 az bot update `
   --resource-group <your-rg> `
   --name <your-bot-name> `
-  --endpoint "https://<your-app-name>.azurewebsites.net/api/messages"
+  --endpoint "https://<your-container-app-fqdn>/api/messages"
 ```
+
+> Get the FQDN with: `az containerapp show --name <your-app-name> --resource-group <your-rg> --query properties.configuration.ingress.fqdn -o tsv`
 
 ---
 
@@ -237,10 +243,14 @@ Teams User → Teams SSO Token → Bot Service
 | `FABRIC_ABS_OAUTH_CONNECTION_NAME` | Name of the OAuth connection on the Bot resource |
 | `AOAI_ENDPOINT` | Azure OpenAI endpoint URL |
 | `AOAI_KEY` | Azure OpenAI API key |
-| `AZURE_OPENAI_DEPLOYMENT_NAME` | Azure OpenAI deployment name |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | Azure OpenAI deployment name (e.g. `gpt-5.4`) |
 | `FABRIC_SALES_GRAPHQL_URL` | Fabric GraphQL endpoint for sales data |
 | `FABRIC_CUSTOMER_GRAPHQL_URL` | Fabric GraphQL endpoint for customer data |
 | `FABRIC_PRODUCT_GRAPHQL_URL` | Fabric GraphQL endpoint for product data |
+| `AZURE_AI_SEARCH_SERVICE_NAME` | Azure AI Search service name (Mem0 vector store) |
+| `AZURE_AI_SEARCH_API_KEY` | Azure AI Search admin API key |
+| `AOAI_EMBEDDING_DEPLOYMENT_NAME` | Embedding model deployment (e.g. `text-embedding-3-small`) |
+| `AOAI_EMBEDDING_API_VERSION` | Embedding API version (e.g. `2024-06-01`) |
 
 ---
 
@@ -251,5 +261,7 @@ Teams User → Teams SSO Token → Bot Service
 | Bot returns 401 | Client ID/secret mismatch | Verify `.env` matches the Entra ID app registration |
 | SSO token exchange fails | Missing Expose an API config | Configure Application ID URI + authorized clients |
 | Fabric returns 403 | Missing delegated permission | Add `Fabric.Read.All` and grant admin consent |
-| Bot offline in Teams | Messaging endpoint wrong | Verify it points to `https://<app>.azurewebsites.net/api/messages` |
-| No response from bot | App Service crashed | Check App Service logs: `az webapp log tail --name <app> --resource-group <rg>` |
+| Bot offline in Teams | Messaging endpoint wrong | Verify it points to `https://<container-app-fqdn>/api/messages` |
+| No response from bot | Container crashed | Check logs: `az containerapp logs show --name <app> --resource-group <rg> --tail 100` |
+| Mem0 extraction fails (400) | `max_tokens` incompatibility | Ensure `mem0ai==2.0.0` is pinned in requirements.txt |
+| Mem0 not writing to Search | LLM extraction error | Check container logs for `LLM extraction failed` messages |

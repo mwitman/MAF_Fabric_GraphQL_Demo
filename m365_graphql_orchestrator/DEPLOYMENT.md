@@ -147,7 +147,9 @@ az containerapp create `
     FABRIC_PRODUCT_GRAPHQL_URL=<your-fabric-graphql-url>
 ```
 
-### (Recommended) Enable Managed Identity for Fabric Access
+### (Optional) Managed Identity for ACR Pull
+
+Instead of using admin credentials for ACR, you can use managed identity:
 
 ```powershell
 # Enable system-assigned managed identity
@@ -156,14 +158,27 @@ az containerapp identity assign `
   --resource-group <your-rg> `
   --system-assigned
 
-# Get the principal ID
-az containerapp show `
+# Grant AcrPull on the registry
+$principalId = az containerapp show `
   --name <your-container-app> `
   --resource-group <your-rg> `
   --query "identity.principalId" -o tsv
+
+$acrId = az acr show --name <your-acr> --query "id" -o tsv
+
+az role assignment create --assignee $principalId --role AcrPull --scope $acrId
+
+# Switch registry auth to managed identity
+az containerapp registry set `
+  --name <your-container-app> `
+  --resource-group <your-rg> `
+  --server <your-acr>.azurecr.io `
+  --identity system
 ```
 
-Then add this identity to the **Fabric workspace** with Viewer (or higher) access.
+> **Note on Fabric access**: The container app's identity is NOT used for Fabric GraphQL.
+> The bot uses the **signed-in Teams user's identity** (SSO → OBO token exchange) to call
+> Fabric. Each user must have Fabric workspace access granted to their own Entra ID account.
 
 ### Get the Container App FQDN
 
