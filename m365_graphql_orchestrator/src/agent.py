@@ -172,6 +172,9 @@ def _get_user_token_client(context: TurnContext) -> Optional[Any]:
 
 def _get_user_id(context: TurnContext) -> Optional[str]:
     if hasattr(context.activity, "from_property"):
+        aad_id = getattr(context.activity.from_property, "aad_object_id", None)
+        if aad_id:
+            return aad_id
         return getattr(context.activity.from_property, "id", None)
     actor = getattr(context.activity, "from", None)
     return getattr(actor, "id", None)

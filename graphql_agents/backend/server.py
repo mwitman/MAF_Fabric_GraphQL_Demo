@@ -94,6 +94,7 @@ async def chat(request: Request):
     body = await request.json()
     message: str = body.get("message", "")
     conversation_id: str = body.get("conversation_id") or str(uuid.uuid4())
+    user_id: str = body.get("user_id") or "default_user"
 
     if not message.strip():
         return {"error": "message is required"}, 400
@@ -102,7 +103,7 @@ async def chat(request: Request):
     enriched_message = message
     if memory:
         try:
-            results = memory.search(query=message, filters={"user_id": "default_user"}, limit=5)
+            results = memory.search(query=message, filters={"user_id": user_id}, limit=5)
             memories_list = results.get("results", []) if isinstance(results, dict) else results
             if memories_list:
                 mem_lines = "\n".join(f"- {m['memory']}" for m in memories_list)
@@ -151,7 +152,7 @@ async def chat(request: Request):
                     {"role": "user", "content": message},
                     {"role": "assistant", "content": "".join(full_response)},
                 ]
-                memory.add(exchange, user_id="default_user")
+                memory.add(exchange, user_id=user_id)
             except Exception as exc:
                 _mem0_logger.warning("Mem0 add failed: %s", exc)
 
